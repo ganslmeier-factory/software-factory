@@ -32,12 +32,20 @@ export type Config = {
   improve?: { everyDays?: number };
   /** Vorschau pro PR mit Passwortschutz (Nutzer "factory"). Mit domain über HTTPS, sonst http://<host>:<4000+slot> */
   preview?: { host: string; domain?: string; password: string; max?: number; memory?: string };
+  /** Modell pro Rolle, fehlende Rollen nehmen `model` */
+  models?: Partial<Record<Phase | "improve", string>>;
+  /** Architektur als eigener Lauf vor der Umsetzung. Standard: an */
+  designPhase?: boolean;
+  /** Halt nach der Architektur: "spec" = wie in der Spec (design_gate), "always", "never". Standard: "spec" */
+  designGate?: "spec" | "always" | "never";
+  /** Ereignisse an die Chat-Bridge (POST <url>, Bearer <token>) */
+  notify?: { url: string; token: string };
 };
 
 type Comment = { author: { login: string } | null; body: string; createdAt: string };
 type Issue = { number: number; title: string; body: string; url: string; labels: { name: string }[]; comments: Comment[] };
 type Container = { name: string; repo: string; issue: number; phase: Phase; mode: string; running: boolean; startedAt: string; finishedAt: string; exitCode: number };
-type Phase = "check" | "build" | "accept";
+export type Phase = "check" | "design" | "build" | "accept";
 type Mode = "new" | "answer" | "change-request" | "retry" | "rework";
 
 const CONFIG_PATH = process.env.FACTORY_CONFIG ?? "/etc/software-factory/config.json";
@@ -49,7 +57,10 @@ const STATUS: Record<string, { name: string; color: string; description: string 
   question: { name: "Rückfrage", color: "YELLOW", description: "Die Factory braucht eine Antwort von dir" },
   rejected: { name: "Abgelehnt", color: "RED", description: "So nicht baubar, die Spec muss überarbeitet werden" },
   approved: { name: "Freigegeben", color: "PURPLE", description: "Prüfung bestanden, wartet auf einen freien Platz" },
-  working: { name: "In Arbeit", color: "ORANGE", description: "Architektur, Umsetzung, Tests" },
+  designing: { name: "Architektur", color: "ORANGE", description: "Ein eigener Agent entwirft design.md" },
+  design_review: { name: "Design-Review", color: "PINK", description: "design.md liegt vor, wartet auf das Label design-ok" },
+  designed: { name: "Design fertig", color: "PURPLE", description: "Architektur steht, wartet auf einen freien Platz für die Umsetzung" },
+  working: { name: "In Arbeit", color: "ORANGE", description: "Umsetzung, Tests" },
   accepting: { name: "Abnahme", color: "BLUE", description: "Ein unabhängiger Agent testet den Pull Request" },
   review: { name: "Review", color: "PINK", description: "PR und Vorschau sind bereit, du bist dran" },
   done: { name: "Fertig", color: "GREEN", description: "Gemergt" },
@@ -68,6 +79,31 @@ export const setFactoryLogin = (login: string) => { FACTORY_LOGIN = login; };
 
 function log(event: string, data: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }));
+}
+
+/** Labels, die Menschen (z. B. per Signal-Bridge) setzen */
+export const PAUSE_LABEL = "pausiert";
+export const CANCEL_LABEL = "abgebrochen";
+export const DESIGN_OK_LABEL = "design-ok";
+
+/** Modell für eine Rolle: models.<rolle>, sonst model */
+export const modelFor = (cfg: Config, role: Phase | "improve") => cfg.models?.[role] || cfg.model;
+
+/** Meldet ein Ereignis an die Chat-Bridge. Fehler stören den Runner nie. */
+export async function notify(cfg: Config, ev: { type: string; repo: string; issue: number; title?: string; stage?: string; text?: string; url?: string }) {
+  const token = cfg.notify?.token || process.env.FACTORY_NOTIFY_TOKEN;
+  if (!cfg.notify?.url || !token) return;
+  try {
+    const res = await fetch(cfg.notify.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ...ev, text: ev.text ? redact(ev.text).slice(0, 1500) : undefined }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) log("notify:error", { type: ev.type, status: res.status });
+  } catch (e) {
+    log("notify:error", { type: ev.type, error: String(e) });
+  }
 }
 
 export function loadConfig(path = CONFIG_PATH): Config {
@@ -143,7 +179,8 @@ export function redact(text: string): string {
 
 // ---------- Dauerhafter Zustand pro Issue (nur für den Runner) ----------
 
-type IssueState = { lostRetries?: number };
+/** designSha = Commit, mit dem die Architektur design.md festgelegt hat. Die Umsetzung darf design.md danach nicht ändern. */
+type IssueState = { lostRetries?: number; designSha?: string };
 const stateFile = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "state", `${repo.replace("/", "__")}__${n}.json`);
 function getState(cfg: Config, repo: string, n: number): IssueState {
   try { return JSON.parse(readFileSync(stateFile(cfg, repo, n), "utf8")); } catch { return {}; }
@@ -312,16 +349,24 @@ export function buildPrompt(cfg: Config, repo: string, issue: Issue, phase: Phas
     if (!isTrusted(cfg, who)) return `### ${who} · ${c.createdAt}\n_(Kommentar ausgeblendet: ${who} ist für die Factory nicht berechtigt. Nicht beachten.)_`;
     return `### ${who} · ${c.createdAt}\n${c.body.replace(/<!-- software-factory:[\w:]+ -->\n?/g, "")}`;
   }).join("\n\n");
+  const designSeparate = cfg.designPhase !== false;
+  const gate = cfg.designGate ?? "spec";
   const start = phase === "check"
     ? `Phase **Prüfung**: Prüfe nur, entwickle nichts. Beginne mit \`factory-report checking "..."\` und ende mit approved (vorher Testszenarien nach /scenarios/scenarios.md), question oder rejected.`
-    : phase === "build"
-      ? `Phase **Bau**: Die Prüfung ist bestanden (siehe Verlauf). Beginne mit \`factory-report architecture "..."\` (bei Änderungswunsch oder Rückgabe aus der Abnahme direkt mit implementing). Ende mit built.`
-      : `Phase **Abnahme**: Du bist der unabhängige Prüfer für den PR ${prUrl ?? ""}. Ende mit accepted, rework oder (nur in der letzten Runde) unresolved.`;
+    : phase === "design"
+      ? `Phase **Architektur**: Entwirf nur, setze nichts um. Beginne mit \`factory-report architecture "..."\`. Committe und pushe design.md (Bug: den roten Test). ` +
+        (gate === "always" ? `Ende mit design_review.` : gate === "never" ? `Ende mit designed.` : `Ende mit design_review, wenn im Kopf der Spec \`design_gate: ja\` steht, sonst mit designed.`)
+      : phase === "build"
+        ? designSeparate
+          ? `Phase **Umsetzung**: Prüfung und Architektur sind abgeschlossen (siehe Verlauf). design.md im Feature-Ordner ist verbindlich und wird nicht geändert. Beginne mit \`factory-report implementing "..."\`. Ende mit built.`
+          : `Phase **Bau**: Die Prüfung ist bestanden (siehe Verlauf). Beginne mit \`factory-report architecture "..."\` (bei Änderungswunsch oder Rückgabe aus der Abnahme direkt mit implementing). Ende mit built.`
+        : `Phase **Abnahme**: Du bist der unabhängige Prüfer für den PR ${prUrl ?? ""}. Ende mit accepted, rework oder (nur in der letzten Runde) unresolved.`;
+  const phaseName: Record<Phase, string> = { check: "Prüfung", design: "Architektur", build: designSeparate ? "Umsetzung" : "Bau", accept: "Abnahme" };
   return [
     `# Auftrag`,
     `- Repo: ${repo}`, `- Issue: #${issue.number} (${issue.url})`, `- Branch: factory/${issue.number}`,
     `- Workflow: ${cfg.workflow} (Beschreibung: /factory/workflows/${cfg.workflow}/workflow.md)`,
-    `- Phase: ${phase === "check" ? "Prüfung" : phase === "build" ? "Bau" : "Abnahme"}`,
+    `- Phase: ${phaseName[phase]}`,
     `- Modus: ${modeText[mode]}`,
     ...(extra ? [`- ${extra}`] : []),
     ``, `## Issue: ${issue.title}`, ``, issue.body || "_(kein Text)_",
@@ -360,7 +405,7 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
     await comment(repo, issue.number, "claimed",
       `🏭 Die Factory hat das Issue übernommen und prüft es jetzt. Den Fortschritt siehst du am Status (Label bzw. Board).`);
   }
-  const status = phase === "check" ? "checking" : phase === "build" ? "working" : "accepting";
+  const status = phase === "check" ? "checking" : phase === "design" ? "designing" : phase === "build" ? "working" : "accepting";
   // Testszenarien liegen außerhalb des Repos: Prüfung schreibt sie, Abnahme liest sie, der Bau sieht sie nie
   const scen = scenarioDir(cfg, repo, issue.number);
   mkdirSync(scen, { recursive: true });
@@ -377,16 +422,29 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
     "--label", "software-factory=1", "--label", `sf.repo=${repo}`, "--label", `sf.issue=${issue.number}`, "--label", `sf.phase=${phase}`, "--label", `sf.mode=${mode}`,
     ...agentLimits(cfg),
     "-e", `REPO=${repo}`, "-e", `ISSUE=${issue.number}`, "-e", `BRANCH=factory/${issue.number}`,
-    "-e", `MODEL=${cfg.model}`, "-e", `WORKFLOW=${cfg.workflow}`, "-e", `PHASE=${phase}`,
+    "-e", `MODEL=${modelFor(cfg, phase)}`, "-e", `WORKFLOW=${cfg.workflow}`, "-e", `PHASE=${phase}`,
     "-e", "GH_TOKEN", "-e", authVar, // Werte kommen aus der Umgebung, nicht aus der Kommandozeile
     "-v", `${dir}:/work`, ...scenarioMount,
     await imageFor(cfg, repo),
   ], { GH_TOKEN: ghToken });
-  log("job:started", { repo, issue: issue.number, phase, mode, container: name });
+  log("job:started", { repo, issue: issue.number, phase, mode, model: modelFor(cfg, phase), container: name });
+  await notify(cfg, { type: phase === "check" && mode === "new" ? "started" : "stage", repo, issue: issue.number, title: issue.title, stage: STATUS[status].name });
 }
 
+/** Nach dem Architektur-Lauf: Ist der gemeldete Stand gepusht? Liefert den Commit oder einen Grund. */
+async function checkDesign(repo: string, issue: number, reportedSha?: string): Promise<{ sha?: string; problem?: string }> {
+  let head = "";
+  try { head = (await gh(["api", `repos/${repo}/git/ref/heads/factory/${issue}`, "--jq", ".object.sha"])).trim(); } catch {}
+  if (!head) return { problem: `Der Branch \`factory/${issue}\` mit design.md wurde nicht gepusht.` };
+  if (reportedSha && reportedSha !== head) return { problem: `Gemeldet wurde \`${reportedSha.slice(0, 7)}\`, gepusht ist \`${head.slice(0, 7)}\`. design.md muss vor der Meldung gepusht sein.` };
+  return { sha: head };
+}
+
+/** Hat die Umsetzung seit dem Architektur-Commit eine design.md geändert? */
+export const designFilesIn = (files: string[]) => files.map((f) => f.trim()).filter((f) => /^features\/[^/]+\/design\.md$/.test(f));
+
 /** Nach einem Bau-Lauf: Sind die Pflicht-Checks auf genau dem gepushten Stand grün und ist die Spec unverändert? */
-async function checkBuild(repo: string, issue: number, dir: string, prUrl?: string): Promise<string | null> {
+async function checkBuild(repo: string, issue: number, dir: string, prUrl?: string, designSha?: string): Promise<string | null> {
   const verify = readJobJson(join(dir, "verify.json"));
   if (!verify || verify.ok !== true || !Array.isArray(verify.results) || verify.results.length === 0) {
     return "Die Pflicht-Checks wurden nicht ausgeführt oder sind nicht grün (`factory-verify`).";
@@ -402,10 +460,22 @@ async function checkBuild(repo: string, issue: number, dir: string, prUrl?: stri
       if (spec) return `Der Pull Request ändert die Spec \`${spec.trim()}\`. Die Spec ist der Vertrag und darf nur vom Menschen geändert werden.`;
     } catch {}
   }
+  if (designSha && designSha !== head) {
+    try {
+      const files = (await gh(["api", `repos/${repo}/compare/${designSha}...${head}`, "--jq", ".files[].filename"])).split("\n");
+      const changed = designFilesIn(files);
+      if (changed.length) return `Die Umsetzung ändert \`${changed[0]}\`. design.md legt die Architektur fest; Abweichungen gehören begründet in den PR-Text, nicht in design.md.`;
+    } catch {}
+  }
   return null;
 }
 
 /** Wertet einen beendeten Container aus und räumt ihn weg. `reason` = Grund, warum der Runner ihn beendet hat. */
+/** Welche Endstände die Bridge als Nachricht aufs Handy bekommt */
+const EVENT_FOR: Record<string, string> = {
+  question: "question", rejected: "rejected", design_review: "design_review", review: "pr_ready",
+};
+
 async function finish(cfg: Config, c: Container, reason?: string) {
   const dir = jobDir(cfg, c.repo, c.issue);
   const status: { status?: string; step?: string; pr?: string; unresolved?: boolean } = readJobJson(join(dir, "status.json")) ?? {};
@@ -415,13 +485,21 @@ async function finish(cfg: Config, c: Container, reason?: string) {
 
   const endStates: Record<Phase, string[]> = {
     check: ["approved", "question", "rejected", "failed"],
+    design: ["design_review", "designed", "question", "failed"],
     build: ["accepting", "question", "failed"],
     accept: ["review", "working", "question", "failed"], // working = Rückgabe an die Entwicklung
   };
   let problem = reason ?? null;
   if (!problem && !(status.status && endStates[c.phase].includes(status.status))) problem = "Der Lauf hat kein Ergebnis gemeldet.";
   if (!problem && (c.exitCode !== 0 || result.is_error)) problem = `Claude Code wurde mit einem Fehler beendet (Exit-Code ${c.exitCode}).`;
-  if (!problem && c.phase === "build" && status.status === "accepting") problem = await checkBuild(c.repo, c.issue, dir, status.pr);
+  const prev = getState(cfg, c.repo, c.issue);
+  let designSha = prev.designSha;
+  if (!problem && c.phase === "design" && (status.status === "design_review" || status.status === "designed")) {
+    const d = await checkDesign(c.repo, c.issue);
+    if (d.problem) problem = d.problem; else designSha = d.sha;
+  }
+  if (!problem && c.phase === "build" && status.status === "accepting")
+    problem = await checkBuild(c.repo, c.issue, dir, status.pr, cfg.designPhase !== false ? designSha : undefined);
   const ended = !problem;
   const metricStatus = ended ? (status.status === "review" && status.unresolved ? "unresolved" : status.status) : "failed";
 
@@ -447,11 +525,14 @@ async function finish(cfg: Config, c: Container, reason?: string) {
   appendFileSync(join(cfg.dataDir, "metrics.jsonl"), JSON.stringify({
     t: new Date().toISOString(), repo: c.repo, issue: c.issue, phase: c.phase, mode: c.mode,
     status: metricStatus, exitCode: c.exitCode, seconds: Number.isFinite(seconds) ? seconds : null,
-    turns: result.num_turns ?? null, costUsd: result.total_cost_usd ?? null, model: cfg.model,
+    turns: result.num_turns ?? null, costUsd: result.total_cost_usd ?? null, model: modelFor(cfg, c.phase),
   }) + "\n");
 
   if (ended) {
-    setState(cfg, c.repo, c.issue, {});
+    setState(cfg, c.repo, c.issue, designSha ? { designSha } : {});
+    const ev = EVENT_FOR[status.status ?? ""];
+    if (ev) await notify(cfg, { type: ev, repo: c.repo, issue: c.issue, stage: STATUS[status.status!]?.name,
+      text: (status as any).question || (status as any).summary, url: status.pr });
   } else {
     let detail = typeof result.result === "string" ? result.result.slice(-1500) : "";
     if (!detail) detail = errTail.slice(-800);
@@ -463,6 +544,7 @@ async function finish(cfg: Config, c: Container, reason?: string) {
       `### ⚠️ Der Lauf wurde ohne gültiges Ergebnis beendet\n\n**Grund:** ${problem}\n\n` +
       (detail ? "Letzte Ausgabe:\n```\n" + detail + "\n```\n\n" : "") +
       `_Schreib einen Kommentar mit einem Hinweis, dann versucht die Factory es erneut._`);
+    await notify(cfg, { type: "failed", repo: c.repo, issue: c.issue, title: issue.title, text: problem ?? undefined });
   }
   await docker(["rm", "-f", c.name]).catch(() => {});
 }
@@ -632,7 +714,7 @@ async function maybeImprove(cfg: Config, freeSlots: number) {
   const authVar = process.env.CLAUDE_CODE_OAUTH_TOKEN ? "CLAUDE_CODE_OAUTH_TOKEN" : "ANTHROPIC_API_KEY";
   await docker(["run", "-d", "--name", "sf-improve", "--label", "sf.improve=1",
     ...agentLimits(cfg),
-    "-e", `REPO=${cfg.factoryRepo}`, "-e", `MODEL=${cfg.model}`, "-e", "GH_TOKEN", "-e", authVar,
+    "-e", `REPO=${cfg.factoryRepo}`, "-e", `MODEL=${modelFor(cfg, "improve")}`, "-e", "GH_TOKEN", "-e", authVar,
     "-v", `${work}:/work`, "-v", `${runs}:/data/runs:ro`, "-v", `${metrics}:/data/metrics.jsonl:ro`,
     "--entrypoint", "/factory/improve.sh", cfg.image], { GH_TOKEN: ghToken });
   log("improve:started", { repo: cfg.factoryRepo });
@@ -648,9 +730,15 @@ async function lostJob(cfg: Config, repo: string, issue: Issue): Promise<boolean
   await syncBoard(cfg, issue.url, "failed");
   await comment(repo, issue.number, `failed:${lastFactoryMarker(issue)?.phase ?? "build"}`,
     `### ⚠️ Der Lauf ist wiederholt verloren gegangen\n\nDie Factory startet ihn nicht noch einmal automatisch, damit keine Endlosschleife entsteht.\n\n_Schreib einen Kommentar, dann versucht sie es erneut._`);
-  setState(cfg, repo, issue.number, {});
+  setState(cfg, repo, issue.number, s.designSha ? { designSha: s.designSha } : {});
   return false;
 }
+
+/** Steuer-Labels, die Menschen setzen */
+export const labelState = (issue: { labels: { name: string }[] }) => {
+  const names = new Set(issue.labels.map((l) => l.name.toLowerCase()));
+  return { paused: names.has(PAUSE_LABEL), cancelled: names.has(CANCEL_LABEL), designOk: names.has(DESIGN_OK_LABEL) };
+};
 
 async function tickRepo(cfg: Config, repo: string, containers: Container[], slots: { free: number }) {
   const issues: Issue[] = JSON.parse(await gh(["issue", "list", "-R", repo, "--label", cfg.label, "--state", "open",
@@ -689,6 +777,20 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
   for (const issue of issues) {
     const status = stageOf(issue);
     const running = containers.find((c) => c.repo === repo && c.issue === issue.number && openNumbers.has(c.issue));
+    const flags = labelState(issue);
+    if (flags.cancelled) {
+      // Abgebrochen (z. B. per Signal): laufenden Job stoppen, nichts Neues starten
+      if (running) {
+        log("job:stopped", { repo, issue: issue.number, reason: "Label abgebrochen" });
+        await docker(["kill", running.name]).catch(() => {});
+        await docker(["rm", "-f", running.name]).catch(() => {});
+        slots.free++;
+        await comment(repo, issue.number, `failed:${running.phase}`,
+          `### ⏹ Abgebrochen\n\nDer laufende Job wurde gestoppt. Commits auf \`factory/${issue.number}\` bleiben erhalten.\n\n_Label \`${CANCEL_LABEL}\` entfernen, dann geht es beim nächsten Durchlauf weiter._`);
+        await notify(cfg, { type: "cancelled", repo, issue: issue.number, title: issue.title });
+      }
+      continue;
+    }
     if (running) {
       // Genauen Schritt aus dem laufenden Job aufs Board bringen
       const step = readJobJson(join(jobDir(cfg, repo, issue.number), "status.json"), 10_000)?.step || undefined;
@@ -709,7 +811,16 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
     const answered = humanCommentsSinceFactory(cfg, issue).length > 0;
     if (current === "new") phase = "check";
     else if (current === "checking") { phase = "check"; mode = "retry"; lost = true; }          // Prüf-Job verloren
-    else if (current === "approved") phase = "build";
+    else if (current === "approved") phase = cfg.designPhase !== false ? "design" : "build";
+    else if (current === "designing") { phase = "design"; mode = "retry"; lost = true; }       // Architektur-Job verloren
+    else if (current === "design_review") {
+      if (flags.designOk) {
+        await gh(["issue", "edit", String(issue.number), "-R", repo, "--remove-label", DESIGN_OK_LABEL]).catch(() => {});
+        await setStage(repo, issue, "designed");
+        phase = "build";
+      } else if (answered) { phase = "design"; mode = "answer"; }                              // Anmerkungen zum Design
+    }
+    else if (current === "designed") phase = "build";
     else if (current === "working") {
       phase = "build";
       mode = marker?.status === "rework" ? "rework" : "retry";                                  // Rückgabe aus der Abnahme oder Job verloren
@@ -725,6 +836,8 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
       if (prUrl) { phase = "build"; mode = "change-request"; }
     }
     if (!phase) continue;
+    // Pausiert: laufende Jobs dürfen fertig werden, neue starten nicht
+    if (flags.paused) continue;
     // Ein gemeinsamer Platz-Pool für alle Phasen. Ohne freien Platz bleibt das Issue in seinem Status und kommt beim nächsten Durchlauf dran.
     if (slots.free <= 0) continue;
     if (lost && !(await lostJob(cfg, repo, issue))) continue;
@@ -791,7 +904,7 @@ async function main() {
   log("runner:started", {
     login: FACTORY_LOGIN, allowedUsers: cfg.allowedUsers ?? [],
     preview: cfg.preview ? previewLink(cfg, 1).replace(/:4001$/, ":4001…") : "aus",
-    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, workflow: cfg.workflow,
+    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, models: cfg.models ?? {}, designPhase: cfg.designPhase !== false, designGate: cfg.designGate ?? "spec", notify: !!cfg.notify?.url, workflow: cfg.workflow,
   });
   while (true) {
     try {

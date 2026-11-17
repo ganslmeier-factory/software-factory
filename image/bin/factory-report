@@ -5,6 +5,9 @@
 #                   factory-report approved  "<Ergebnis der Prüfung>"
 #                   factory-report question  "<was du herausgefunden hast>" --question "<Frage mit Optionen>"
 #                   factory-report rejected  "<Grund>" --question "<was der Mensch tun muss>"
+# Phase "Architektur": factory-report architecture "<was du tust>"
+#                   factory-report designed      "<Zusammenfassung>"   (design.md gepusht, Umsetzung folgt)
+#                   factory-report design_review "<Zusammenfassung>"   (design.md gepusht, Mensch gibt mit Label design-ok frei)
 # Phase "Bau":      factory-report architecture | implementing | verifying  "<was du tust>"
 #                   factory-report built     "<Zusammenfassung>" --pr <url> [--body-file <datei>]   (PR offen, Abnahme folgt)
 #                   factory-report question  "..." --question "..."
@@ -28,14 +31,17 @@ done
 
 STEP=""; UNRESOLVED=false
 case "$STAGE" in
-  checking|approved|question|rejected|failed) STATUS="$STAGE" ;;
+  checking|approved|question|rejected|failed|designed|design_review) STATUS="$STAGE" ;;
   built) STATUS="accepting" ;;
   accepted|review) STATUS="review" ;;
   unresolved) STATUS="review"; UNRESOLVED=true ;;
   rework) STATUS="working" ;;
   architecture|implementing|verifying) STATUS="working"; STEP="$STAGE" ;;
-  *) echo "Unbekannter Stand '$STAGE'. Erlaubt: checking approved question rejected architecture implementing verifying built accepted rework unresolved failed" >&2; exit 2 ;;
+  *) echo "Unbekannter Stand '$STAGE'. Erlaubt: checking approved question rejected architecture designed design_review implementing verifying built accepted rework unresolved failed" >&2; exit 2 ;;
 esac
+# Im Architektur-Lauf heißt jeder Zwischenschritt "Architektur"
+if [ "${PHASE:-build}" = "design" ] && [ "$STATUS" = "working" ]; then STATUS="designing"; STEP=""; fi
+case "$STAGE" in designed|design_review) [ "${PHASE:-build}" = "design" ] || { echo "$STAGE nur in der Phase Architektur" >&2; exit 2; } ;; esac
 # In der Abnahme sind Zwischenschritte kein Statuswechsel: der Status bleibt "Abnahme"
 if [ "${PHASE:-build}" = "accept" ] && { [ "$STATUS" = "checking" ] || { [ "$STATUS" = "working" ] && [ "$STAGE" != "rework" ]; }; }; then
   STATUS="accepting"; STEP=""
@@ -68,6 +74,13 @@ case "$STAGE" in
   rejected)
     { echo "$MARK"; echo "### ⛔ So kann die Factory das nicht umsetzen"; echo; echo "$SUMMARY"; echo; echo "$QUESTION"; echo;
       echo "_Wenn du die Spec angepasst hast, schreib hier einen kurzen Kommentar. Dann prüft die Factory erneut._"; } | comment ;;
+  designed)
+    { echo "$MARK"; echo "### 📐 Architektur steht"; echo; echo "$SUMMARY"; echo;
+      echo "_design.md liegt auf \`factory/$ISSUE\`. Die Umsetzung startet, sobald ein Platz frei ist._"; } | comment ;;
+  design_review)
+    { echo "$MARK"; echo "### 📐 Architektur zur Freigabe"; echo; echo "$SUMMARY"; echo;
+      echo "design.md: https://github.com/$REPO/blob/factory/$ISSUE/$(git -C /work/repo diff --name-only "origin/${FACTORY_DEFAULT_BRANCH:-main}"...HEAD 2>/dev/null | grep -m1 '/design.md$' || echo 'features')"; echo;
+      echo "_Passt es: Label \`design-ok\` setzen. Sonst Anmerkungen hier ins Issue schreiben, dann überarbeitet die Factory den Entwurf._"; } | comment ;;
   built)
     { echo "$MARK"; echo "### 🔎 Pull Request erstellt, unabhängige Abnahme folgt: $PR_URL"; echo; echo "$SUMMARY"; } | comment ;;
   accepted|review)

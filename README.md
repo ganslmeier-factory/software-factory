@@ -121,6 +121,33 @@ Die Factory startet die **unveränderte, offizielle Claude Code CLI** auf deinem
 
 Tests für den Runner: `node --test runner/main.test.ts` (Node 22.6+, ohne GitHub und Docker).
 
+## Erweiterungen in diesem Fork (ganslmeier-factory)
+
+**Architektur als eigener Lauf.** Nach der Freigabe startet ein eigener Container nur für die Architektur. Er schreibt `design.md`, committet und pusht auf `factory/<nr>` und endet. Die Umsetzung läuft danach in einem neuen Container und darf `design.md` nicht ändern; der Runner prüft das über den Commit-Vergleich ab dem Architektur-Commit.
+
+Statusfolge: Freigegeben → Architektur → (Design-Review) → Design fertig → In Arbeit → Abnahme → Review.
+
+**Design-Gate.** Steht im Kopf der Spec `design_gate: ja`, hält die Factory nach der Architektur im Status *Design-Review*. Das Label `design-ok` gibt die Umsetzung frei; ein Kommentar im Issue schickt den Entwurf zur Überarbeitung zurück. `designGate` in der Config: `spec` (Standard), `always`, `never`.
+
+**Modell pro Rolle.** `models.check`, `models.design`, `models.build`, `models.accept`, `models.improve`; fehlende Rollen nehmen `model`. Empfehlung: Opus für Architektur, Sonnet für Prüfung, Umsetzung und Abnahme.
+
+**Steuer-Labels.** `pausiert`: keine neuen Läufe, ein laufender Job darf fertig werden. `abgebrochen`: laufender Job wird gestoppt, Commits bleiben erhalten. Beide lassen sich per Signal setzen (`pause #nr`, `stop #nr`).
+
+**Chat-Bridge.** Mit `notify.url` (z. B. `http://192.168.2.26:8090/event`) und `notify.token` (oder Umgebungsvariable `FACTORY_NOTIFY_TOKEN`) meldet der Runner Start, Stufenwechsel, Rückfragen, Design-Review, PR bereit, Fehler und Abbruch. Fehler beim Melden halten den Runner nie auf. Damit Antworten per Signal zählen, muss das Bot-Konto der Bridge in `allowedUsers` stehen.
+
+Beispiel:
+
+```json
+"model": "opus",
+"models": { "check": "sonnet", "design": "opus", "build": "sonnet", "accept": "sonnet" },
+"designPhase": true,
+"designGate": "spec",
+"allowedUsers": ["ganslmeier", "ORRYX-one"],
+"notify": { "url": "http://192.168.2.26:8090/event", "token": "" }
+```
+
+Nach dem Update `./scripts/add-repo.sh <repo>` erneut ausführen, damit die neuen Labels angelegt werden.
+
 ## Lizenz
 
 MIT

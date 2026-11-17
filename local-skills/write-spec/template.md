@@ -1,7 +1,11 @@
-# PROJ-X: Feature-Name
+---
+id: PROJ-X
+status: Planned          # Planned | Architected | In Progress | In Review | Approved
+design_gate: nein        # ja = Factory hält nach design.md an, Label design-ok gibt frei
+erstellt: YYYY-MM-DD
+---
 
-**Status:** Planned
-**Erstellt:** YYYY-MM-DD
+# PROJ-X: Feature-Name
 
 ## Abhängigkeiten
 - Keine
@@ -13,8 +17,11 @@
 - _Beispiel: Sortieren nach Datum (eigenes Feature, PROJ-X)_
 
 ## Akzeptanzkriterien
-- [ ] AK-1: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis]
-- [ ] AK-2: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis]
+Jedes Kriterium hat eine ID (`PROJ-X/AK-n`, wird nie neu vergeben) und eine Nachweisart:
+`Test` (automatisierter Test nennt die ID) · `Messung` · `Inspektion` · `Demo` · `Analyse` (Nachweis-Datei in `verification/`).
+
+- [ ] PROJ-X/AK-1: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis] — Nachweis: Test
+- [ ] PROJ-X/AK-2: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis] — Nachweis: Messung
 
 ## Edge Cases
 - EC-1: Was passiert, wenn …?

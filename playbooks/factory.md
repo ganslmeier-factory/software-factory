@@ -4,7 +4,8 @@ Du arbeitest als Agent in der **Software Factory**. Du bearbeitest genau **ein G
 
 Jeder Lauf hat genau **eine Phase**, sie steht in der ersten Nachricht:
 - **Prüfung:** Du prüfst, ob das Issue so umgesetzt werden kann, und schreibst Testszenarien für die spätere Abnahme. Du entwickelst nichts.
-- **Bau:** Die Prüfung ist bestanden. Du entwickelst, testest und öffnest einen Pull Request.
+- **Architektur:** Die Prüfung ist bestanden. Du entwirfst `design.md` (Bug: roter Test), pushst und hörst auf. Du setzt nichts um.
+- **Bau (Umsetzung):** Prüfung und Architektur sind abgeschlossen. Du entwickelst nach `design.md`, testest und öffnest einen Pull Request.
 - **Abnahme:** Du bist ein unabhängiger Prüfer. Du testest den fertigen Pull Request gegen Spec und Testszenarien. Du entwickelst nichts.
 
 Deine Umgebung:
@@ -56,9 +57,27 @@ Ziel: eine klare Entscheidung in wenigen Minuten. **Kein Code, keine Commits, ke
 
 Danach beendest du die Arbeit.
 
+## Phase „Architektur"
+
+Eigener Lauf, eigenes Modell. **Kein Produktivcode.** Ergebnis ist ein Commit mit `design.md`, den die Umsetzung als Vorgabe bekommt.
+
+1. `factory-report architecture "<was du entwirfst>"`
+2. Feature: Skill `architecture` → `design.md` im Feature-Ordner der Spec. Lege dort fest, welches Akzeptanzkriterium (`PROJ-X/AK-n`) mit welchem Test oder welcher Nachweis-Datei belegt wird.
+   Bug: Fehler reproduzieren, Test schreiben, der ihn zeigt, rot laufen lassen.
+3. Committen und pushen auf `factory/<nummer>`: `docs(<PROJ-ID>): Architektur für <name> (#<nummer>)`.
+4. Abschluss:
+   - Steht im Kopf der Spec `design_gate: ja` (oder sagt die erste Nachricht „Ende mit design_review"): `factory-report design_review "<2–4 Sätze: Kernentscheidungen und Alternativen>"`. Ein Mensch prüft und setzt `design-ok`.
+   - Sonst: `factory-report designed "<1–2 Sätze>"`.
+   - Braucht die Architektur eine Entscheidung (neuer Dienst, Datenhaltung, Widerspruch): `question` mit Optionen.
+5. **Fortsetzung nach Anmerkungen zum Design:** design.md gemäß den Kommentaren überarbeiten, pushen, erneut `design_review` melden.
+
+Der Runner übernimmt das Ergebnis nur, wenn `factory/<nummer>` gepusht ist.
+
 ## Phase „Bau"
 
-1. **Architektur:** `factory-report architecture "..."`
+Läuft die Architektur als eigener Lauf (Standard), beginnt der Bau direkt mit Schritt 2. `design.md` ist dann verbindlich: Du änderst sie nicht. Weichst du begründet ab, steht das unter „Annahmen" im PR-Text; ist die Abweichung grundlegend, stellst du eine Rückfrage. Der Runner lehnt einen Bau ab, der `design.md` ändert.
+
+1. **Architektur** (nur wenn kein eigener Architektur-Lauf stattfand): `factory-report architecture "..."`
    - Feature: Skill `architecture` → `design.md` im Feature-Ordner der Spec.
    - Bug: Fehler reproduzieren, Test schreiben, der ihn zeigt, und rot laufen lassen.
 2. **Umsetzung:** `factory-report implementing "..."`
@@ -73,7 +92,7 @@ Danach beendest du die Arbeit.
    1. `Closes #<nummer>`
    2. **Spec:** Link zur `spec.md` (bei Features)
    3. **Was umgesetzt wurde** (2–4 Sätze, verständlich ohne Code-Kenntnisse)
-   4. **Akzeptanzkriterien** aus der Spec, jedes mit Ergebnis (✅ / ❌)
+   4. **Akzeptanzkriterien** aus der Spec mit ID (`PROJ-X/AK-n`), Nachweisart und Ergebnis (✅ / ❌)
    5. **Annahmen, die ich getroffen habe** (eine pro Zeile, oder „keine")
    6. **Checks** (Inhalt aus `/work/verify.md`)
    7. **Screenshots** (Ausgabe von `factory-screenshot`), falls es sichtbare Änderungen gibt
