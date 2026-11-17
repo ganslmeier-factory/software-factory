@@ -10,14 +10,14 @@ Eine Software Factory mit Claude Code, die rund um die Uhr auf deinem eigenen Se
 
 **Du entscheidest, was gebaut wird. Die Factory baut es.**
 
-1. Du schreibst lokal mit Claude Code die Spec (`/write-spec`), prüfst sie und pushst sie.
+1. Du schreibst lokal mit Claude Code die Anforderungen (`/kiro-spec`, EARS-Format nach [Kiro](https://kiro.dev/docs/specs/)), prüfst sie und pushst sie.
 2. Du übergibst sie mit `/to-factory` an die Factory. Das legt ein GitHub Issue mit Label `factory` an, das auf die Spec zeigt.
-3. Ein Agent auf deinem Server prüft die Spec und schreibt Testszenarien. Ein zweiter Agent entwickelt: Architektur, Umsetzung, Tests, Pull Request mit Belegen (Checks, Screenshots, getroffene Annahmen). Ein dritter, unabhängiger Agent nimmt das Ergebnis mit den Testszenarien ab, die der Entwickler nie gesehen hat. Ist etwas unklar, fragt die Factory im Issue nach und macht weiter, sobald du antwortest.
+3. Ein Agent auf deinem Server prüft die Spec und schreibt Testszenarien. Ein zweiter Agent schreibt Design und Aufgabenplan, ein dritter arbeitet die Aufgaben ab und testet, mit Pull Request mit Belegen (Checks, Screenshots, getroffene Annahmen). Ein unabhängiger Agent nimmt das Ergebnis mit den Testszenarien ab, die der Entwickler nie gesehen hat. Ist etwas unklar, fragt die Factory im Issue nach und macht weiter, sobald du antwortest.
 4. Du prüfst den Pull Request und mergst. **Gemergt wird immer von dir.**
 
 Bugs gehen auch ohne Spec: Issue mit Label `factory` anlegen und beschreiben, was falsch ist und was du erwartest.
 
-**Status auf dem Board:** Neu → In Prüfung → Rückfrage / Abgelehnt → Freigegeben → In Arbeit (Architektur · Umsetzung · Tests) → Abnahme → Review → Fertig, bei technischen Fehlern Fehlgeschlagen. Prüfung, Entwicklung und Abnahme sind getrennte Läufe in eigenen Containern: Neue Issues werden sofort geprüft, entwickelt wird, sobald ein Platz frei ist.
+**Status auf dem Board:** Neu → In Prüfung → Rückfrage / Abgelehnt → Freigegeben → Design → (Design-Review) → Design fertig → In Arbeit (Umsetzung · Tests) → Abnahme → Review → Fertig, bei technischen Fehlern Fehlgeschlagen. Prüfung, Entwicklung und Abnahme sind getrennte Läufe in eigenen Containern: Neue Issues werden sofort geprüft, entwickelt wird, sobald ein Platz frei ist.
 
 > 🚧 Erste Version, in aktiver Entwicklung.
 
@@ -44,9 +44,9 @@ Eigener Docker-Container pro Issue
 - **Runner** (`runner/`): kleiner Dienst auf dem Server. Holt Issues, startet Container, setzt Labels und Board-Status. Schreibt selbst keinen Code.
 - **Job-Image** (`image/`): Claude Code, GitHub CLI, git, Node und Chromium (für Tests und Screenshots).
 - **Playbook** (`playbooks/factory.md`): die festen Regeln für jeden Lauf. Stages melden, bei Unklarheit fragen statt raten, Pflicht-Checks, nie selbst mergen.
-- **Workflow** (`workflows/starter-kit/`): wie entwickelt wird. Standard ist der Workflow aus dem [AI Coding Starter Kit](https://github.com/AlexPEClub/ai-coding-starter-kit): `architecture → build → qa` auf Basis deiner Spec, mit getrennten Dateien pro Feature (`spec.md`, `design.md`, `qa-report.md`). Austauschbar, siehe [workflow.md](workflows/starter-kit/workflow.md).
-- **Stack-Packs** (`workflows/starter-kit/stacks/`): Regeln für einen bestimmten Stack (z. B. `nextjs`, `supabase`). Welche gelten, steht in `docs/stack.md` des Projekts. Die Factory ist stack-unabhängig.
-- **Lokale Skills** (`local-skills/`): `init` (Projekt aufsetzen inkl. Stack), `write-spec` (Spec im Interview erarbeiten), `to-factory` (an die Factory übergeben). Einmal pro Rechner installieren: `./scripts/install-local-skills.sh`.
+- **Workflow** (`workflows/kiro/`): Spec-Driven nach dem Muster von Kiro. Pro Feature `.kiro/specs/<feature>/` mit `requirements.md` (Mensch), `design.md` und `tasks.md` (Factory); projektweiter Kontext in `.kiro/steering/`. Siehe [workflow.md](workflows/kiro/workflow.md).
+- **Stack-Packs** (`workflows/kiro/stacks/`): Regeln für einen bestimmten Stack (z. B. `nextjs`, `supabase`). Welche gelten, steht in `.kiro/steering/tech.md` des Projekts.
+- **Lokale Skills** (`local-skills/`): `kiro-init` (Steering-Dateien und Grundgerüst), `kiro-spec` (Anforderungen im Interview), `to-factory` (an die Factory übergeben). Einmal pro Rechner installieren: `./scripts/install-local-skills.sh`.
 - **Projekt-Vorlage**: [factory-template](https://github.com/AlexPEClub/factory-template), stack-unabhängig. Neues Projekt: `./scripts/new-project.sh mein-projekt`.
 
 ## Voraussetzungen
@@ -68,7 +68,7 @@ Danach:
 2. **GitHub-Login** auf dem Server: `gh auth login -s project`
 3. **Factory starten:** `systemctl restart software-factory`
 4. **Auf deinem Rechner:** `./scripts/install-local-skills.sh`, dann `FACTORY_SERVER=root@DEINE-IP ./scripts/new-project.sh mein-projekt`. Legt das Repo aus der Vorlage an und bindet es samt Labels und Kanban-Board an die Factory an. Ein bestehendes Repo bindest du stattdessen auf dem Server mit `./scripts/add-repo.sh dein-name/dein-repo` an.
-5. Im Projekt: Briefing in `docs/briefing.md` → `/init` → pro Feature `/write-spec` → `/to-factory`
+5. Im Projekt: `/kiro-init` (einmalig) → pro Feature `/kiro-spec` → `/to-factory`
 
 Die ausführliche Schritt-für-Schritt-Anleitung (inkl. Server bei Hostinger): [docs/hostinger-vps-setup.md](docs/hostinger-vps-setup.md).
 
@@ -100,7 +100,7 @@ Die Factory liest `.factory/setup.json` im Ziel-Repo:
 }
 ```
 
-`/init` legt sie passend zum Stack an. Braucht dein Stack eine andere Laufzeit als Node oder Python, ergänzt `/init` eine `.factory/Dockerfile`, die auf dem Factory-Image aufbaut.
+`/kiro-init` legt sie passend zum Stack an. Braucht dein Stack eine andere Laufzeit als Node oder Python, ergänzt `/kiro-init` eine `.factory/Dockerfile`, die auf dem Factory-Image aufbaut.
 
 ## Claude-Abo: was ist erlaubt?
 
@@ -123,30 +123,22 @@ Tests für den Runner: `node --test runner/main.test.ts` (Node 22.6+, ohne GitHu
 
 ## Erweiterungen in diesem Fork (ganslmeier-factory)
 
-**Architektur als eigener Lauf.** Nach der Freigabe startet ein eigener Container nur für die Architektur. Er schreibt `design.md`, committet und pusht auf `factory/<nr>` und endet. Die Umsetzung läuft danach in einem neuen Container und darf `design.md` nicht ändern; der Runner prüft das über den Commit-Vergleich ab dem Architektur-Commit.
+**Spec-Driven nach Kiro.** Anforderungen in EARS (`WENN … DANN SOLL …`), nummeriert 1.1, 1.2 …; Design und Aufgabenplan schreibt die Factory; die Umsetzung hakt `tasks.md` Aufgabe für Aufgabe ab, sodass der Fortschritt in der Datei sichtbar ist. Der Runner lehnt einen Bau ab, der `requirements.md` oder `.kiro/steering/` ändert.
 
-Statusfolge: Freigegeben → Architektur → (Design-Review) → Design fertig → In Arbeit → Abnahme → Review.
+**Design als eigener Lauf.** Nach der Freigabe schreibt ein eigener Container `design.md` und `tasks.md`, committet und endet. Die Umsetzung läuft danach in einem neuen Container und darf `design.md` nicht ändern.
 
-**Design-Gate.** Steht im Kopf der Spec `design_gate: ja`, hält die Factory nach der Architektur im Status *Design-Review*. Das Label `design-ok` gibt die Umsetzung frei; ein Kommentar im Issue schickt den Entwurf zur Überarbeitung zurück. `designGate` in der Config: `spec` (Standard), `always`, `never`.
+**Design-Freigabe.** Steht in `requirements.md` `Design-Freigabe: ja`, hält die Factory nach dem Design im Status *Design-Review*. Das Label `design-ok` gibt die Umsetzung frei; ein Kommentar im Issue schickt den Entwurf zur Überarbeitung zurück. `designGate` in der Config: `spec` (Standard), `always`, `never`.
 
-**Modell pro Rolle.** `models.check`, `models.design`, `models.build`, `models.accept`, `models.improve`; fehlende Rollen nehmen `model`. Empfehlung: Opus für Architektur, Sonnet für Prüfung, Umsetzung und Abnahme.
-
-**Steuer-Labels.** `pausiert`: keine neuen Läufe, ein laufender Job darf fertig werden. `abgebrochen`: laufender Job wird gestoppt, Commits bleiben erhalten. Beide lassen sich per Signal setzen (`pause #nr`, `stop #nr`).
-
-**Chat-Bridge.** Mit `notify.url` (z. B. `http://192.168.2.26:8090/event`) und `notify.token` (oder Umgebungsvariable `FACTORY_NOTIFY_TOKEN`) meldet der Runner Start, Stufenwechsel, Rückfragen, Design-Review, PR bereit, Fehler und Abbruch. Fehler beim Melden halten den Runner nie auf. Damit Antworten per Signal zählen, muss das Bot-Konto der Bridge in `allowedUsers` stehen.
-
-Beispiel:
+**Modell pro Rolle.** `models.check`, `models.design`, `models.build`, `models.accept`, `models.improve`; fehlende Rollen nehmen `model`.
 
 ```json
+"workflow": "kiro",
 "model": "opus",
-"models": { "check": "sonnet", "design": "opus", "build": "sonnet", "accept": "sonnet" },
-"designPhase": true,
-"designGate": "spec",
-"allowedUsers": ["ganslmeier", "ORRYX-one"],
-"notify": { "url": "http://192.168.2.26:8090/event", "token": "" }
+"models": { "check": "sonnet", "design": "opus", "build": "sonnet", "accept": "sonnet", "improve": "opus" },
+"designGate": "spec"
 ```
 
-Nach dem Update `./scripts/add-repo.sh <repo>` erneut ausführen, damit die neuen Labels angelegt werden.
+Nach dem Update `./scripts/add-repo.sh <repo>` erneut ausführen, damit die Labels für Design und `design-ok` angelegt werden.
 
 ## Lizenz
 

@@ -9,7 +9,7 @@ log() { echo "[factory] $*"; }
 : "${REPO:?}" "${ISSUE:?}" "${BRANCH:?}"
 MODEL="${MODEL:-opus}"
 export PHASE="${PHASE:-build}"   # check = prüfen, design = Architektur, build = entwickeln, accept = unabhängige Abnahme
-WORKFLOW="${WORKFLOW:-starter-kit}"
+WORKFLOW="${WORKFLOW:-kiro}"
 
 # Workflow-Skills als Nutzer-Skills bereitstellen (landen nicht im Ziel-Repo)
 mkdir -p "$HOME/.claude/skills"

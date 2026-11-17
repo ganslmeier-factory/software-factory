@@ -8,13 +8,13 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, lstat
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildPrompt, buildSnapshot, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
+  buildPrompt, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
   reworksSinceApproval, setFactoryLogin, writeJobFile, type Config,
 } from "./main.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "sf-test-"));
 const cfg = (extra: Partial<Config> = {}): Config => ({
-  repos: [], label: "factory", maxParallel: 1, model: "opus", workflow: "starter-kit", pollSeconds: 60,
+  repos: [], label: "factory", maxParallel: 1, model: "opus", workflow: "kiro", pollSeconds: 60,
   jobTimeoutMinutes: 90, image: "x", dataDir: tmp(), containerMemory: "3g", maxReworks: 2, ...extra,
 });
 const c = (login: string, body: string) => ({ author: { login }, body, createdAt: "2026-11-11T10:00:00Z" });
@@ -151,6 +151,7 @@ type Call = { cmd: string[]; stdin: string };
 const calls: Call[] = [];
 let headSha = "abc1234";
 let compareFiles = "";
+let prDiff = "src/app/page.tsx\n";
 (globalThis as any).Bun = {
   spawn(cmd: string[], opts: any) {
     const call: Call = { cmd, stdin: "" };
@@ -158,7 +159,7 @@ let compareFiles = "";
     let out = "";
     if (cmd[0] === "gh" && cmd[1] === "issue" && cmd[2] === "view") out = JSON.stringify(issue([]));
     if (cmd[0] === "gh" && cmd[1] === "api" && String(cmd[2]).includes("/git/ref/heads/")) out = headSha + "\n";
-    if (cmd[0] === "gh" && cmd[1] === "pr" && cmd[2] === "diff") out = "src/app/page.tsx\n";
+    if (cmd[0] === "gh" && cmd[1] === "pr" && cmd[2] === "diff") out = prDiff;
     if (cmd[0] === "gh" && cmd[1] === "api" && String(cmd[2]).includes("/compare/")) out = compareFiles;
     return {
       stdout: new Blob([out]).stream(), stderr: new Blob([""]).stream(), kill() {},
@@ -243,19 +244,21 @@ test("Modell pro Rolle mit Rückfall auf model", () => {
   assert.equal(modelFor(cfg(), "accept"), "opus");
 });
 
-test("Steuer-Labels pausiert, abgebrochen, design-ok", () => {
+test("Label design-ok wird erkannt", () => {
   const l = (...n: string[]) => ({ labels: n.map((name) => ({ name })) });
-  assert.deepEqual(labelState(l("factory", "pausiert")), { paused: true, cancelled: false, designOk: false });
-  assert.deepEqual(labelState(l("Abgebrochen", "design-ok")), { paused: false, cancelled: true, designOk: true });
+  assert.deepEqual(labelState(l("factory")), { designOk: false });
+  assert.deepEqual(labelState(l("factory", "Design-OK")), { designOk: true });
 });
 
-test("Nur design.md im Feature-Ordner zählt als Architektur-Datei", () => {
-  assert.deepEqual(designFilesIn(["src/a.ts", "features/PROJ-3-x/design.md", "docs/design.md", ""]), ["features/PROJ-3-x/design.md"]);
+test("Nur design.md im Spec-Ordner zählt als Design-Datei", () => {
+  assert.deepEqual(designFilesIn(["src/a.ts", ".kiro/specs/kursanzeige/design.md", ".kiro/specs/kursanzeige/tasks.md", "docs/design.md", ""]),
+    [".kiro/specs/kursanzeige/design.md"]);
 });
 
 test("Prompt der Architektur-Phase richtet sich nach dem Design-Gate", () => {
   const p = (designGate?: Config["designGate"]) => buildPrompt(cfg({ designGate }), "a/b", issue([]), "design", "new");
-  assert.ok(p().includes("design_gate: ja"));
+  assert.ok(p().includes("Design-Freigabe: ja"));
+  assert.ok(p().includes("tasks.md"));
   assert.ok(p("always").includes("Ende mit design_review."));
   assert.ok(p("never").includes("Ende mit designed."));
   assert.ok(buildPrompt(cfg(), "a/b", issue([]), "build", "new").includes("Phase **Umsetzung**"));
@@ -280,7 +283,7 @@ test("Architektur-Lauf darf nicht mit built enden", async () => {
 
 test("Umsetzung, die design.md ändert, gilt nicht als gebaut", async () => {
   const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
-  compareFiles = "src/app/page.tsx\nfeatures/PROJ-3-x/design.md\n";
+  compareFiles = "src/app/page.tsx\n.kiro/specs/kursanzeige/design.md\n.kiro/specs/kursanzeige/tasks.md\n";
   const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() },
     0, undefined, { designSha: "0001111" });
   compareFiles = "";
@@ -299,37 +302,17 @@ test("Umsetzung ohne Änderung an design.md geht in die Abnahme und behält den 
   assert.equal(r.saved.designSha, "0001111");
 });
 
-// ---------- Schnappschuss für Signal ----------
 
-test("Schnappschuss: Auslastung, laufende Jobs, Warteschlange, offene Entscheidungen", () => {
-  const now = Date.parse("2026-11-17T12:00:00Z");
-  const config = cfg({ maxParallel: 2, models: { build: "sonnet" } });
-  const issues = [
-    { repo: "a/b", issue: 1, title: "Kurs", stage: "working", paused: false },
-    { repo: "a/b", issue: 2, title: "Farbe", stage: "approved", paused: false },
-    { repo: "a/b", issue: 3, title: "Ton", stage: "design_review", paused: false },
-    { repo: "a/b", issue: 4, title: "Akku", stage: "designed", paused: true },
-  ];
-  const jobs = [{ repo: "a/b", issue: 1, phase: "build" as const, mode: "new", startedAt: "2026-11-17T11:37:00Z", step: "verifying" }];
-  const snap = buildSnapshot(config, jobs, issues, false, "", now);
-  assert.deepEqual(snap.slots, { total: 2, used: 1 });
-  assert.deepEqual(snap.running[0], { repo: "a/b", issue: 1, title: "Kurs", phase: "build", mode: "new", model: "sonnet", step: "verifying", minutes: 23 });
-  assert.deepEqual(snap.waiting.map((w) => [w.issue, w.paused]), [[2, false], [4, true]]);
-  assert.deepEqual(snap.human.map((h) => [h.issue, h.stage]), [[3, "design_review"]]);
-});
-
-test("Schnappschuss: Statistik nur über die letzten 7 Tage", () => {
-  const now = Date.parse("2026-11-17T12:00:00Z");
-  const m = (t: string, phase: string, status: string, seconds = 600, costUsd = 1) => JSON.stringify({ t, repo: "a/b", issue: 1, phase, status, seconds, costUsd });
-  const metrics = [
-    m("2026-11-01T10:00:00Z", "accept", "review"),           // zu alt
-    m("2026-11-16T10:00:00Z", "build", "accepting", 1200),
-    m("2026-11-16T11:00:00Z", "accept", "working"),
-    m("2026-11-16T12:00:00Z", "accept", "review"),
-    m("2026-11-16T13:00:00Z", "check", "question"),
-    "kaputt",
-  ].join("\n");
-  const s = buildSnapshot(cfg(), [], [], true, metrics, now).stats;
-  assert.deepEqual(s, { runs: 4, done: 1, questions: 1, failed: 0, acceptPassed: 1, acceptTotal: 2, buildMinutesAvg: 20, costUsd: 4 });
-  assert.equal(buildSnapshot(cfg(), [], [], true, "", now).slots.used, 1); // Verbesserungs-Lauf belegt einen Platz
+test("Bau, der requirements.md oder Steering-Dateien ändert, gilt nicht als gebaut", async () => {
+  const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
+  for (const f of [".kiro/specs/kursanzeige/requirements.md", ".kiro/steering/tech.md"]) {
+    prDiff = `src/a.ts\n${f}\n`;
+    const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
+    assert.equal(r.metric.status, "failed", f);
+    assert.ok(r.failedComment.includes(f));
+  }
+  prDiff = "src/app/page.tsx\n.kiro/specs/kursanzeige/tasks.md\n";
+  const ok = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
+  assert.equal(ok.metric.status, "accepting");
+  prDiff = "src/app/page.tsx\n";
 });

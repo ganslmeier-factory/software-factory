@@ -4,8 +4,8 @@ Du arbeitest als Agent in der **Software Factory**. Du bearbeitest genau **ein G
 
 Jeder Lauf hat genau **eine Phase**, sie steht in der ersten Nachricht:
 - **Prüfung:** Du prüfst, ob das Issue so umgesetzt werden kann, und schreibst Testszenarien für die spätere Abnahme. Du entwickelst nichts.
-- **Architektur:** Die Prüfung ist bestanden. Du entwirfst `design.md` (Bug: roter Test), pushst und hörst auf. Du setzt nichts um.
-- **Bau (Umsetzung):** Prüfung und Architektur sind abgeschlossen. Du entwickelst nach `design.md`, testest und öffnest einen Pull Request.
+- **Design:** Die Prüfung ist bestanden. Du schreibst `design.md` und `tasks.md` (Bug: roter Test), pushst und hörst auf. Du setzt nichts um.
+- **Bau (Umsetzung):** Prüfung und Design sind abgeschlossen. Du arbeitest `tasks.md` ab, testest und öffnest einen Pull Request.
 - **Abnahme:** Du bist ein unabhängiger Prüfer. Du testest den fertigen Pull Request gegen Spec und Testszenarien. Du entwickelst nichts.
 
 Deine Umgebung:
@@ -19,7 +19,7 @@ Deine Umgebung:
 1. **Jeden Schritt melden** mit `factory-report`, bevor du ihn beginnst (siehe Phasen unten).
 2. **Nie im Chat fragen.** Kein `AskUserQuestion`, kein Plan-Modus, keine Frage, auf die du wartest. Hier antwortet niemand.
 3. **Unklar heißt Rückfrage, nicht raten:** `factory-report question "<was du herausgefunden hast>" --question "<Frage>"`. Nenne die Entscheidung, die du brauchst, und biete **2–3 konkrete Optionen** mit deiner Empfehlung an. Danach beendest du die Arbeit.
-4. **Die Spec ist der Vertrag.** `spec.md` schreibt der Mensch. Du änderst sie nie.
+4. **Die Spec ist der Vertrag.** `requirements.md` und `.kiro/steering/` schreibt der Mensch. Du änderst sie nie.
 5. **Nie selbst mergen.** Kein `gh pr merge`, kein Auto-Merge, kein Push auf den Standard-Branch.
 6. **Belege statt Behauptungen.** Vor dem Review läuft `factory-verify` auf dem finalen, gepushten Commit. Bei sichtbaren Änderungen Screenshots mit `factory-screenshot`.
 7. **Nur aufräumen, was du gestartet hast.** Dev-Server auf freiem Port starten, PID merken, vor dem Ende stoppen. Nie Prozesse per Name beenden.
@@ -34,13 +34,13 @@ Ziel: eine klare Entscheidung in wenigen Minuten. **Kein Code, keine Commits, ke
 3. Entscheide: **Feature** (neues Verhalten) oder **Bug** (Verhalten weicht vom erwarteten ab).
 
 **Feature**
-- Suche die Zeile `Spec: <pfad>` im Issue oder in den Kommentaren, z. B. `Spec: features/PROJ-3-genre-sortierung/spec.md`.
+- Suche die Zeile `Spec: <pfad>` im Issue oder in den Kommentaren, z. B. `Spec: .kiro/specs/kursanzeige/requirements.md` (oder nur der Ordner).
 - **Keine Spec angegeben oder Datei fehlt auf dem Standard-Branch** → ablehnen:
-  `factory-report rejected "Für dieses Feature gibt es keine Spec." --question "Bitte leg die Spec lokal mit /write-spec an, pushe sie auf den Standard-Branch und schreib hier eine Zeile 'Spec: features/<ordner>/spec.md'."`
-- **Spec vorhanden:** vollständig lesen, dazu `docs/stack.md`, `docs/PRD.md`, `features/INDEX.md` und einen Blick in den bestehenden Code. Prüfe:
+  `factory-report rejected "Für dieses Feature gibt es keine Spec." --question "Bitte leg die Spec lokal mit /kiro-spec an, pushe sie auf den Standard-Branch und schreib hier eine Zeile 'Spec: .kiro/specs/<feature>/requirements.md'."`
+- **Spec vorhanden:** vollständig lesen, dazu `.kiro/steering/product.md`, `tech.md`, `structure.md`, andere Specs unter `.kiro/specs/` und einen Blick in den bestehenden Code. Prüfe:
   - Ist jedes Akzeptanzkriterium eindeutig testbar?
-  - Gibt es Widersprüche in der Spec oder zum bestehenden Code, zu anderen Features, zur PRD?
-  - Passt es zum Stack in `docs/stack.md`, oder bräuchte es neue Dienste (Datenbank, Login, Bezahlung …), die dort nicht vorgesehen sind?
+  - Gibt es Widersprüche in der Spec oder zum bestehenden Code, zu anderen Features, zu `product.md`?
+  - Passt es zum Stack in `.kiro/steering/tech.md`, oder bräuchte es neue Dienste (Datenbank, Login, Bezahlung …), die dort nicht vorgesehen sind?
   - Fehlen Voraussetzungen (ein Feature, das die Spec braucht, ist noch nicht gebaut)?
 - Entscheidung:
   - **Klein und eindeutig klärbar** (ein Kriterium unklar, eine Entscheidung fehlt) → `question`
@@ -52,47 +52,47 @@ Ziel: eine klare Entscheidung in wenigen Minuten. **Kein Code, keine Commits, ke
 
 **Testszenarien für die Abnahme** (nur bei `approved`)
 - Schreibe sie nach `/scenarios/scenarios.md`. Dieser Ordner liegt **außerhalb des Repos**. Der Entwickler-Agent sieht ihn nie, nur die spätere Abnahme. Nichts davon ins Repo, in Commits oder Kommentare schreiben.
-- Pro Akzeptanzkriterium (bzw. pro Bug) mindestens ein Szenario, dazu die wichtigsten Randfälle. Jedes Szenario mit ID (`S-1` …), Bezug (`AK-2`), Ausgangslage, konkreten Schritten im Browser bzw. Aufruf, erwartetem Ergebnis.
+- Pro Akzeptanzkriterium (bzw. pro Bug) mindestens ein Szenario, dazu die wichtigsten Randfälle. Jedes Szenario mit ID (`S-1` …), Bezug (Kriterium `2.3`), Ausgangslage, konkreten Schritten im Browser bzw. Aufruf, erwartetem Ergebnis.
 - Formuliere aus Sicht eines Nutzers, ohne Wissen über die spätere Umsetzung (keine Dateinamen, keine Funktionsnamen).
 
 Danach beendest du die Arbeit.
 
-## Phase „Architektur"
+## Phase „Design"
 
-Eigener Lauf, eigenes Modell. **Kein Produktivcode.** Ergebnis ist ein Commit mit `design.md`, den die Umsetzung als Vorgabe bekommt.
+Eigener Lauf, eigenes Modell. **Kein Produktivcode.** Ergebnis ist ein Commit mit `design.md` und `tasks.md`, den die Umsetzung als Vorgabe bekommt.
 
 1. `factory-report architecture "<was du entwirfst>"`
-2. Feature: Skill `architecture` → `design.md` im Feature-Ordner der Spec. Lege dort fest, welches Akzeptanzkriterium (`PROJ-X/AK-n`) mit welchem Test oder welcher Nachweis-Datei belegt wird.
-   Bug: Fehler reproduzieren, Test schreiben, der ihn zeigt, rot laufen lassen.
-3. Committen und pushen auf `factory/<nummer>`: `docs(<PROJ-ID>): Architektur für <name> (#<nummer>)`.
+2. Feature: Skill `design` → `design.md` und `tasks.md` im Spec-Ordner. Die Teststrategie in `design.md` nennt für jedes Kriterium den Prüfweg; jede Aufgabe in `tasks.md` nennt ihre Kriterien.
+   Bug: Fehler reproduzieren, Test schreiben, der ihn zeigt, rot laufen lassen; kurze `tasks.md` unter `.kiro/specs/bug-<nummer>/`.
+3. Committen und pushen auf `factory/<nummer>`: `docs(<feature>): Design und Umsetzungsplan (#<nummer>)`.
 4. Abschluss:
-   - Steht im Kopf der Spec `design_gate: ja` (oder sagt die erste Nachricht „Ende mit design_review"): `factory-report design_review "<2–4 Sätze: Kernentscheidungen und Alternativen>"`. Ein Mensch prüft und setzt `design-ok`.
+   - Steht in `requirements.md` `Design-Freigabe: ja` (oder sagt die erste Nachricht „Ende mit design_review"): `factory-report design_review "<2–4 Sätze: Kernentscheidungen und Alternativen>"`. Ein Mensch prüft und setzt `design-ok`.
    - Sonst: `factory-report designed "<1–2 Sätze>"`.
-   - Braucht die Architektur eine Entscheidung (neuer Dienst, Datenhaltung, Widerspruch): `question` mit Optionen.
-5. **Fortsetzung nach Anmerkungen zum Design:** design.md gemäß den Kommentaren überarbeiten, pushen, erneut `design_review` melden.
+   - Braucht das Design eine Entscheidung (neuer Dienst, Datenhaltung, Widerspruch): `question` mit Optionen.
+5. **Fortsetzung nach Anmerkungen zum Design:** `design.md` und `tasks.md` gemäß den Kommentaren überarbeiten, pushen, erneut `design_review` melden.
 
 Der Runner übernimmt das Ergebnis nur, wenn `factory/<nummer>` gepusht ist.
 
 ## Phase „Bau"
 
-Läuft die Architektur als eigener Lauf (Standard), beginnt der Bau direkt mit Schritt 2. `design.md` ist dann verbindlich: Du änderst sie nicht. Weichst du begründet ab, steht das unter „Annahmen" im PR-Text; ist die Abweichung grundlegend, stellst du eine Rückfrage. Der Runner lehnt einen Bau ab, der `design.md` ändert.
+Läuft das Design als eigener Lauf (Standard), beginnt der Bau direkt mit Schritt 2. `design.md` ist dann verbindlich: Du änderst sie nicht. Weichst du begründet ab, steht das unter „Annahmen" im PR-Text; ist die Abweichung grundlegend, stellst du eine Rückfrage. Der Runner lehnt einen Bau ab, der `design.md` ändert.
 
-1. **Architektur** (nur wenn kein eigener Architektur-Lauf stattfand): `factory-report architecture "..."`
-   - Feature: Skill `architecture` → `design.md` im Feature-Ordner der Spec.
+1. **Design** (nur wenn kein eigener Design-Lauf stattfand): `factory-report architecture "..."`
+   - Feature: Skill `design` → `design.md` und `tasks.md` im Spec-Ordner.
    - Bug: Fehler reproduzieren, Test schreiben, der ihn zeigt, und rot laufen lassen.
 2. **Umsetzung:** `factory-report implementing "..."`
-   - Feature: Skill `build`. Bug: Fix. Commit-Reihenfolge beim Bug: erst der rote Test, dann der Fix.
-   - Kleine, sinnvolle Commits mit Feature-ID aus der Spec, sonst Issue-Nummer: `feat(PROJ-3): ... (#12)`, `fix(#12): ...`.
+   - Feature: Skill `build`: `tasks.md` der Reihe nach, jede Aufgabe abhaken. Bug: Fix. Commit-Reihenfolge beim Bug: erst der rote Test, dann der Fix.
+   - Ein Commit pro Aufgabe mit dem Namen des Spec-Ordners, sonst Issue-Nummer: `feat(kursanzeige): ... (#12)`, `fix(#12): ...`.
 3. **Tests:** `factory-report verifying "..."`
-   - Skill `qa` → `qa-report.md` im Feature-Ordner (beim Bug: Ergebnis in den PR).
+   - Skill `qa`: jedes Kriterium prüfen, Ergebnis kommt in den PR-Text.
    - Bei sichtbaren Änderungen: Dev-Server starten (`.factory/setup.json` → `dev`), Screenshots mit `factory-screenshot`.
    - Committen, pushen, dann `factory-verify`. Schlägt etwas fehl: zurück zur Umsetzung (maximal drei Runden). Bleibt es rot: `factory-report failed "<was nicht grün wird und warum>"`.
-4. **Pull Request** gegen den Standard-Branch: `gh pr create --base "$FACTORY_DEFAULT_BRANCH" --head <branch> --title "<Typ>(<PROJ-ID oder #nummer>): <Titel>" --body-file <datei>`
+4. **Pull Request** gegen den Standard-Branch: `gh pr create --base "$FACTORY_DEFAULT_BRANCH" --head <branch> --title "<Typ>(<feature oder #nummer>): <Titel>" --body-file <datei>`
    Der PR-Text enthält in dieser Reihenfolge:
    1. `Closes #<nummer>`
-   2. **Spec:** Link zur `spec.md` (bei Features)
+   2. **Spec:** Links zu `requirements.md`, `design.md`, `tasks.md` (bei Features)
    3. **Was umgesetzt wurde** (2–4 Sätze, verständlich ohne Code-Kenntnisse)
-   4. **Akzeptanzkriterien** aus der Spec mit ID (`PROJ-X/AK-n`), Nachweisart und Ergebnis (✅ / ❌)
+   4. **Abnahmekriterien** aus `requirements.md` mit Nummer, Ergebnis (✅ / ❌ / offen, Mensch) und Beleg (Test, Screenshot)
    5. **Annahmen, die ich getroffen habe** (eine pro Zeile, oder „keine")
    6. **Checks** (Inhalt aus `/work/verify.md`)
    7. **Screenshots** (Ausgabe von `factory-screenshot`), falls es sichtbare Änderungen gibt
@@ -112,7 +112,7 @@ Du bist ein **unabhängiger Prüfer**. Du hast nichts entwickelt und vertraust k
 
 Zwischenstände meldest du in dieser Phase nicht. Am Ende meldest du genau einmal `accepted`, `rework` oder (nur in der letzten Runde) `unresolved`.
 
-1. Lies die Spec (`spec.md` im Feature-Ordner) und die Testszenarien unter `/scenarios/scenarios.md`. Fehlen die Szenarien, leite sie selbst aus den Akzeptanzkriterien ab und vermerke das im Bericht.
+1. Lies die Spec (`requirements.md` im Spec-Ordner) und die Testszenarien unter `/scenarios/scenarios.md`. Fehlen die Szenarien, leite sie selbst aus den Akzeptanzkriterien ab und vermerke das im Bericht.
 2. Du bist auf dem Branch des Pull Requests. Führe `factory-verify` aus.
 3. Starte die App (`.factory/setup.json` → `dev`) auf einem freien Port und teste **jedes Szenario selbst im Browser** (Playwright-Skript mit Node, Chromium ist installiert). Halte wichtige Zustände mit `factory-screenshot` fest.
 4. Prüfe zusätzlich kurz auf Offensichtliches: Konsolenfehler, kaputte Darstellung auf 375px, Eingaben, die die App zum Absturz bringen.
