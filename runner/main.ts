@@ -874,7 +874,8 @@ export function buildSnapshot(cfg: Config, jobs: SnapJob[], issues: SnapIssue[],
   const busy = new Set(jobs.map((j) => `${j.repo}#${j.issue}`));
   const pick = (stages: string[]) => issues
     .filter((i) => stages.includes(i.stage) && !busy.has(`${i.repo}#${i.issue}`))
-    .map((i) => ({ repo: i.repo, issue: i.issue, title: i.title, stage: i.stage, paused: i.paused }));
+    .map((i) => ({ repo: i.repo, issue: i.issue, title: i.title.slice(0, 60), stage: i.stage, paused: i.paused }))
+    .slice(0, 25); // Nachricht bleibt kurz und unter dem Größenlimit der Bridge
   const waiting = pick(["new", "approved", "designed", "working", "accepting", "checking", "designing"]);
   const human = pick(["question", "rejected", "design_review", "review", "failed"]);
 
