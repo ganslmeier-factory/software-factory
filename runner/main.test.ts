@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, lstat
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildPrompt, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
+  buildPrompt, buildSnapshot, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
   reworksSinceApproval, setFactoryLogin, writeJobFile, type Config,
 } from "./main.ts";
 
@@ -297,4 +297,39 @@ test("Umsetzung ohne Änderung an design.md geht in die Abnahme und behält den 
   compareFiles = "";
   assert.equal(r.metric.status, "accepting");
   assert.equal(r.saved.designSha, "0001111");
+});
+
+// ---------- Schnappschuss für Signal ----------
+
+test("Schnappschuss: Auslastung, laufende Jobs, Warteschlange, offene Entscheidungen", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const config = cfg({ maxParallel: 2, models: { build: "sonnet" } });
+  const issues = [
+    { repo: "a/b", issue: 1, title: "Kurs", stage: "working", paused: false },
+    { repo: "a/b", issue: 2, title: "Farbe", stage: "approved", paused: false },
+    { repo: "a/b", issue: 3, title: "Ton", stage: "design_review", paused: false },
+    { repo: "a/b", issue: 4, title: "Akku", stage: "designed", paused: true },
+  ];
+  const jobs = [{ repo: "a/b", issue: 1, phase: "build" as const, mode: "new", startedAt: "2026-11-17T11:37:00Z", step: "verifying" }];
+  const snap = buildSnapshot(config, jobs, issues, false, "", now);
+  assert.deepEqual(snap.slots, { total: 2, used: 1 });
+  assert.deepEqual(snap.running[0], { repo: "a/b", issue: 1, title: "Kurs", phase: "build", mode: "new", model: "sonnet", step: "verifying", minutes: 23 });
+  assert.deepEqual(snap.waiting.map((w) => [w.issue, w.paused]), [[2, false], [4, true]]);
+  assert.deepEqual(snap.human.map((h) => [h.issue, h.stage]), [[3, "design_review"]]);
+});
+
+test("Schnappschuss: Statistik nur über die letzten 7 Tage", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const m = (t: string, phase: string, status: string, seconds = 600, costUsd = 1) => JSON.stringify({ t, repo: "a/b", issue: 1, phase, status, seconds, costUsd });
+  const metrics = [
+    m("2026-11-01T10:00:00Z", "accept", "review"),           // zu alt
+    m("2026-11-16T10:00:00Z", "build", "accepting", 1200),
+    m("2026-11-16T11:00:00Z", "accept", "working"),
+    m("2026-11-16T12:00:00Z", "accept", "review"),
+    m("2026-11-16T13:00:00Z", "check", "question"),
+    "kaputt",
+  ].join("\n");
+  const s = buildSnapshot(cfg(), [], [], true, metrics, now).stats;
+  assert.deepEqual(s, { runs: 4, done: 1, questions: 1, failed: 0, acceptPassed: 1, acceptTotal: 2, buildMinutesAvg: 20, costUsd: 4 });
+  assert.equal(buildSnapshot(cfg(), [], [], true, "", now).slots.used, 1); // Verbesserungs-Lauf belegt einen Platz
 });

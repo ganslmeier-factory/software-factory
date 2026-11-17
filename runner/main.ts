@@ -90,7 +90,7 @@ export const DESIGN_OK_LABEL = "design-ok";
 export const modelFor = (cfg: Config, role: Phase | "improve") => cfg.models?.[role] || cfg.model;
 
 /** Meldet ein Ereignis an die Chat-Bridge. Fehler stören den Runner nie. */
-export async function notify(cfg: Config, ev: { type: string; repo: string; issue: number; title?: string; stage?: string; text?: string; url?: string }) {
+export async function notify(cfg: Config, ev: { type: string; repo: string; issue: number; title?: string; stage?: string; text?: string; url?: string; snapshot?: unknown }) {
   const token = cfg.notify?.token || process.env.FACTORY_NOTIFY_TOKEN;
   if (!cfg.notify?.url || !token) return;
   try {
@@ -740,7 +740,7 @@ export const labelState = (issue: { labels: { name: string }[] }) => {
   return { paused: names.has(PAUSE_LABEL), cancelled: names.has(CANCEL_LABEL), designOk: names.has(DESIGN_OK_LABEL) };
 };
 
-async function tickRepo(cfg: Config, repo: string, containers: Container[], slots: { free: number }) {
+async function tickRepo(cfg: Config, repo: string, containers: Container[], slots: { free: number }, seen: SnapIssue[] = []) {
   const issues: Issue[] = JSON.parse(await gh(["issue", "list", "-R", repo, "--label", cfg.label, "--state", "open",
     "--json", "number,title,body,url,labels,comments", "--limit", "100"]));
   issues.sort((a, b) => a.number - b.number); // älteste zuerst
@@ -854,7 +854,67 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
     slots.free--;
   }
 
+  for (const i of issues) seen.push({ repo, issue: i.number, title: i.title, stage: stageOf(i) ?? "new", paused: labelState(i).paused });
   await syncPreviews(cfg, repo, issues).catch((e) => log("preview:error", { repo, error: String(e) }));
+}
+
+// ---------- Schnappschuss für die Chat-Bridge (Signal: status, stats) ----------
+
+export type SnapIssue = { repo: string; issue: number; title: string; stage: string; paused: boolean };
+export type SnapJob = { repo: string; issue: number; phase: Phase; mode: string; startedAt: string; step?: string };
+
+/** Fasst laufende Jobs, Warteschlange und die Läufe der letzten 7 Tage zusammen. Reine Funktion, damit testbar. */
+export function buildSnapshot(cfg: Config, jobs: SnapJob[], issues: SnapIssue[], improving: boolean, metrics: string, now = Date.now()) {
+  const title = (repo: string, n: number) => issues.find((i) => i.repo === repo && i.issue === n)?.title ?? "";
+  const running = jobs.map((j) => ({
+    repo: j.repo, issue: j.issue, title: title(j.repo, j.issue), phase: j.phase, mode: j.mode,
+    model: modelFor(cfg, j.phase), step: j.step || undefined,
+    minutes: Math.max(0, Math.round((now - Date.parse(j.startedAt)) / 60000)),
+  }));
+  const busy = new Set(jobs.map((j) => `${j.repo}#${j.issue}`));
+  const pick = (stages: string[]) => issues
+    .filter((i) => stages.includes(i.stage) && !busy.has(`${i.repo}#${i.issue}`))
+    .map((i) => ({ repo: i.repo, issue: i.issue, title: i.title, stage: i.stage, paused: i.paused }));
+  const waiting = pick(["new", "approved", "designed", "working", "accepting", "checking", "designing"]);
+  const human = pick(["question", "rejected", "design_review", "review", "failed"]);
+
+  const cutoff = now - 7 * 86400_000;
+  const runs = metrics.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((r) => r && Date.parse(r.t) >= cutoff);
+  const accepts = runs.filter((r) => r.phase === "accept");
+  const builds = runs.filter((r) => r.phase === "build" && r.status === "accepting" && r.seconds);
+  const stats = {
+    runs: runs.length,
+    done: runs.filter((r) => r.phase === "accept" && r.status === "review").length,
+    questions: runs.filter((r) => r.status === "question").length,
+    failed: runs.filter((r) => r.status === "failed").length,
+    acceptPassed: accepts.filter((r) => r.status === "review").length,
+    acceptTotal: accepts.length,
+    buildMinutesAvg: builds.length ? Math.round(builds.reduce((a, r) => a + r.seconds, 0) / builds.length / 60) : null,
+    costUsd: Math.round(runs.reduce((a, r) => a + (r.costUsd ?? 0), 0) * 100) / 100,
+  };
+  return {
+    at: new Date(now).toISOString(),
+    slots: { total: cfg.maxParallel, used: jobs.length + (improving ? 1 : 0) },
+    improving, running, waiting, human, stats,
+  };
+}
+
+let lastSnapshot = { key: "", at: 0 };
+
+async function sendSnapshot(cfg: Config, issues: SnapIssue[]) {
+  if (!cfg.notify?.url) return;
+  const jobs: SnapJob[] = (await listContainers()).filter((c) => c.running).map((c) => ({
+    repo: c.repo, issue: c.issue, phase: c.phase, mode: c.mode, startedAt: c.startedAt,
+    step: readJobJson(join(jobDir(cfg, c.repo, c.issue), "status.json"), 10_000)?.step,
+  }));
+  const metrics = readJobFile(join(cfg.dataDir, "metrics.jsonl"), 2_000_000) ?? "";
+  const snap = buildSnapshot(cfg, jobs, issues, await improveRunning(cfg), metrics);
+  // Nur bei Änderung senden, sonst alle 5 Minuten als Lebenszeichen (Minuten der Jobs zählen nicht als Änderung)
+  const key = JSON.stringify({ ...snap, at: "", running: snap.running.map((r) => ({ ...r, minutes: 0 })) });
+  if (key === lastSnapshot.key && Date.now() - lastSnapshot.at < 5 * 60_000) return;
+  lastSnapshot = { key, at: Date.now() };
+  await notify(cfg, { type: "snapshot", repo: "", issue: 0, snapshot: snap });
 }
 
 async function tick(cfg: Config) {
@@ -880,12 +940,14 @@ async function tick(cfg: Config) {
   const slots = { free: cfg.maxParallel - containers.length - (improving ? 1 : 0) };
 
   // Ein fehlerhaftes Repo darf die anderen nicht blockieren
+  const seen: SnapIssue[] = [];
   for (const repo of cfg.repos) {
-    try { await tickRepo(cfg, repo, containers, slots); }
+    try { await tickRepo(cfg, repo, containers, slots, seen); }
     catch (e) { log("repo:error", { repo, error: String(e) }); }
   }
 
   await maybeImprove(cfg, slots.free).catch((e) => log("improve:error", { error: String(e) }));
+  await sendSnapshot(cfg, seen).catch((e) => log("snapshot:error", { error: String(e) }));
 }
 
 async function main() {
