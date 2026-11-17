@@ -54,11 +54,15 @@ Fill in while the interview is fresh:
 - **Product Decisions** — every scoping or UX decision with its rationale
 - **Open Questions** — anything unresolved, as `- [ ]`
 
-**Acceptance criteria** in German, numbered, Given/When/Then:
+**Acceptance criteria** in German, one heading per criterion with a global ID, Given/When/Then with number and unit, and a verification type:
 ```
-- [ ] AK-1: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis]
+### PROJ-X/AK-1 <Kurztitel>
+Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis mit Grenze].
+- Nachweis: Test
 ```
-The factory tests every single criterion. If a criterion is not directly testable, rewrite it.
+Verification types: `Test` (automated test names the ID) · `Messung` · `Inspektion` · `Demo` · `Analyse` (file in `verification/`). Hardware criteria are usually `Messung` or `Inspektion`. IDs are never reused. The factory checks every single criterion; if one is not verifiable, rewrite it.
+
+**design_gate** in the front matter: ask the user. Suggest `ja` for hardware, new architecture, external costs or security impact, `nein` for small software features. With `ja` the factory stops after `design.md` until the user sets the label `design-ok`.
 
 Present the draft spec to the user. Apply feedback, then save.
 
@@ -77,15 +81,16 @@ Update `features/INDEX.md`:
 
 Nächste freie ID: PROJ-4
 
-| ID | Feature | Status | Ordner |
-|----|---------|--------|--------|
-| PROJ-3 | Genre-Sortierung | Planned | features/PROJ-3-genre-sortierung/ |
+| ID | Feature | Status | Design-Gate | Ordner |
+|----|---------|--------|-------------|--------|
+| PROJ-3 | Genre-Sortierung | Planned | nein | features/PROJ-3-genre-sortierung/ |
 ```
-Status of the new feature: `Planned`. Increase "Nächste freie ID".
+Status of the new feature: `Planned`. Increase "Nächste freie ID". Only the user sets `Freigegeben` (release for the factory).
 
 ## Checklist Before Completion
 - [ ] User stories defined
-- [ ] Every acceptance criterion numbered (AK-x), Given/When/Then, testable
+- [ ] Every acceptance criterion has an ID `PROJ-X/AK-n`, Given/When/Then with limits, and a `- Nachweis:` line
+- [ ] `design_gate` set in the front matter
 - [ ] Edge cases documented (EC-x)
 - [ ] Out of Scope filled in
 - [ ] Product Decisions logged with rationale

@@ -1,8 +1,8 @@
 ---
 id: PROJ-X
-status: Planned          # Planned | Architected | In Progress | In Review | Approved
-design_gate: nein        # ja = Factory hält nach design.md an, Label design-ok gibt frei
-erstellt: YYYY-MM-DD
+titel: <Feature-Name>
+design_gate: nein        # ja bei Hardware, neuer Architektur, Fremdkosten, Sicherheit: Factory hält nach design.md, Label design-ok gibt frei
+stand: YYYY-MM-DD
 ---
 
 # PROJ-X: Feature-Name
@@ -17,11 +17,20 @@ erstellt: YYYY-MM-DD
 - _Beispiel: Sortieren nach Datum (eigenes Feature, PROJ-X)_
 
 ## Akzeptanzkriterien
-Jedes Kriterium hat eine ID (`PROJ-X/AK-n`, wird nie neu vergeben) und eine Nachweisart:
-`Test` (automatisierter Test nennt die ID) · `Messung` · `Inspektion` · `Demo` · `Analyse` (Nachweis-Datei in `verification/`).
+<!--
+- ID PROJ-X/AK-n, fortlaufend, nie wiederverwenden. Der Status steht in features/INDEX.md.
+- "Angenommen …, wenn …, dann …" mit Zahl und Einheit, keine Wörter wie "schnell" oder "robust".
+- Nachweis: Test (automatischer Test nennt die ID) | Messung | Inspektion | Demo | Analyse
+  (Datei in features/PROJ-X-<name>/verification/ mit "ak:" und "ergebnis: bestanden")
+-->
 
-- [ ] PROJ-X/AK-1: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis] — Nachweis: Test
-- [ ] PROJ-X/AK-2: Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis] — Nachweis: Messung
+### PROJ-X/AK-1 <Kurztitel>
+Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis mit Grenze].
+- Nachweis: Test
+
+### PROJ-X/AK-2 <Kurztitel>
+Angenommen [Vorbedingung], wenn [Aktion], dann [Ergebnis mit Grenze].
+- Nachweis: Messung
 
 ## Edge Cases
 - EC-1: Was passiert, wenn …?
