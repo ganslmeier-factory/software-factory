@@ -33,7 +33,9 @@ gh repo clone "$REPO" "$NAME" -- --quiet
 cd "$NAME"
 
 echo "▶ An die Factory auf $SERVER hängen"
-ssh "$SERVER" "cd $FDIR && ./scripts/add-repo.sh $REPO"
+# Config und gh-Login liegen beim root-Konto des Servers
+SUDO="sudo "; case "$SERVER" in root@*) SUDO="" ;; esac
+ssh -t "$SERVER" "cd $FDIR && ${SUDO}./scripts/add-repo.sh $REPO"
 
 echo
 echo "Fertig: $(pwd)"
