@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, lstat
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildPrompt, caddyConfig, humanCommentsSinceFactory, lastFactoryMarker, readJobFile, redact,
+  buildPrompt, buildSnapshot, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
   reworksSinceApproval, setFactoryLogin, writeJobFile, type Config,
 } from "./main.ts";
 
@@ -150,6 +150,7 @@ import { finish } from "./main.ts";
 type Call = { cmd: string[]; stdin: string };
 const calls: Call[] = [];
 let headSha = "abc1234";
+let compareFiles = "";
 (globalThis as any).Bun = {
   spawn(cmd: string[], opts: any) {
     const call: Call = { cmd, stdin: "" };
@@ -158,6 +159,7 @@ let headSha = "abc1234";
     if (cmd[0] === "gh" && cmd[1] === "issue" && cmd[2] === "view") out = JSON.stringify(issue([]));
     if (cmd[0] === "gh" && cmd[1] === "api" && String(cmd[2]).includes("/git/ref/heads/")) out = headSha + "\n";
     if (cmd[0] === "gh" && cmd[1] === "pr" && cmd[2] === "diff") out = "src/app/page.tsx\n";
+    if (cmd[0] === "gh" && cmd[1] === "api" && String(cmd[2]).includes("/compare/")) out = compareFiles;
     return {
       stdout: new Blob([out]).stream(), stderr: new Blob([""]).stream(), kill() {},
       exited: (async () => { if (opts.stdin instanceof Blob) call.stdin = await opts.stdin.text(); return 0; })(),
@@ -165,8 +167,9 @@ let headSha = "abc1234";
   },
 };
 
-async function finishRun(phase: "check" | "build" | "accept", files: Record<string, string>, exitCode = 0, reason?: string) {
+async function finishRun(phase: "check" | "design" | "build" | "accept", files: Record<string, string>, exitCode = 0, reason?: string, state?: object) {
   const config = cfg();
+  if (state) { mkdirSync(join(config.dataDir, "state"), { recursive: true }); writeFileSync(join(config.dataDir, "state", "a__b__7.json"), JSON.stringify(state)); }
   const dir = join(config.dataDir, "jobs", "a__b__7");
   mkdirSync(dir, { recursive: true });
   for (const [f, content] of Object.entries(files)) writeFileSync(join(dir, f), content);
@@ -175,7 +178,9 @@ async function finishRun(phase: "check" | "build" | "accept", files: Record<stri
     startedAt: "2026-11-11T10:00:00Z", finishedAt: "2026-11-11T10:05:00Z", exitCode }, reason);
   const metric = JSON.parse(readFileSync(join(config.dataDir, "metrics.jsonl"), "utf8").trim());
   const failedComment = calls.find((x) => x.cmd[1] === "issue" && x.cmd[2] === "comment")?.stdin ?? "";
-  return { metric, failedComment, dir };
+  let saved: any = {};
+  try { saved = JSON.parse(readFileSync(join(config.dataDir, "state", "a__b__7.json"), "utf8")); } catch {}
+  return { metric, failedComment, dir, saved };
 }
 const result = (extra = {}) => JSON.stringify({ type: "result", result: "fertig", num_turns: 3, ...extra }) + "\n";
 
@@ -227,4 +232,104 @@ test("Fehlerkommentar enthält keine Server-Dateien und keine Tokens", async () 
     startedAt: "2026-11-11T10:00:00Z", finishedAt: "2026-11-11T10:05:00Z", exitCode: 1 });
   const posted = calls.map((x) => x.stdin).join("\n");
   assert.ok(!posted.includes("GEHEIM"));
+});
+
+// ---------- Architektur als eigener Lauf, Modell pro Rolle, Steuer-Labels ----------
+
+test("Modell pro Rolle mit Rückfall auf model", () => {
+  const config = cfg({ model: "opus", models: { check: "sonnet", build: "sonnet" } });
+  assert.equal(modelFor(config, "check"), "sonnet");
+  assert.equal(modelFor(config, "design"), "opus");
+  assert.equal(modelFor(cfg(), "accept"), "opus");
+});
+
+test("Steuer-Labels pausiert, abgebrochen, design-ok", () => {
+  const l = (...n: string[]) => ({ labels: n.map((name) => ({ name })) });
+  assert.deepEqual(labelState(l("factory", "pausiert")), { paused: true, cancelled: false, designOk: false });
+  assert.deepEqual(labelState(l("Abgebrochen", "design-ok")), { paused: false, cancelled: true, designOk: true });
+});
+
+test("Nur design.md im Feature-Ordner zählt als Architektur-Datei", () => {
+  assert.deepEqual(designFilesIn(["src/a.ts", "features/PROJ-3-x/design.md", "docs/design.md", ""]), ["features/PROJ-3-x/design.md"]);
+});
+
+test("Prompt der Architektur-Phase richtet sich nach dem Design-Gate", () => {
+  const p = (designGate?: Config["designGate"]) => buildPrompt(cfg({ designGate }), "a/b", issue([]), "design", "new");
+  assert.ok(p().includes("design_gate: ja"));
+  assert.ok(p("always").includes("Ende mit design_review."));
+  assert.ok(p("never").includes("Ende mit designed."));
+  assert.ok(buildPrompt(cfg(), "a/b", issue([]), "build", "new").includes("Phase **Umsetzung**"));
+  assert.ok(buildPrompt(cfg({ designPhase: false }), "a/b", issue([]), "build", "new").includes("Phase **Bau**"));
+});
+
+test("Architektur-Lauf merkt sich den gepushten Commit", async () => {
+  const r = await finishRun("design", { "status.json": '{"status":"designed"}', "claude.jsonl": result() });
+  assert.equal(r.metric.status, "designed");
+  assert.equal(r.saved.designSha, headSha);
+});
+
+test("Architektur-Lauf mit design_review ist ein gültiges Ende", async () => {
+  const r = await finishRun("design", { "status.json": '{"status":"design_review"}', "claude.jsonl": result() });
+  assert.equal(r.metric.status, "design_review");
+});
+
+test("Architektur-Lauf darf nicht mit built enden", async () => {
+  const r = await finishRun("design", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "claude.jsonl": result() });
+  assert.equal(r.metric.status, "failed");
+});
+
+test("Umsetzung, die design.md ändert, gilt nicht als gebaut", async () => {
+  const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
+  compareFiles = "src/app/page.tsx\nfeatures/PROJ-3-x/design.md\n";
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() },
+    0, undefined, { designSha: "0001111" });
+  compareFiles = "";
+  assert.equal(r.metric.status, "failed");
+  assert.ok(r.failedComment.includes("design.md"));
+  assert.equal(r.saved.designSha, "0001111");
+});
+
+test("Umsetzung ohne Änderung an design.md geht in die Abnahme und behält den Architektur-Commit", async () => {
+  const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
+  compareFiles = "src/app/page.tsx\n";
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() },
+    0, undefined, { designSha: "0001111" });
+  compareFiles = "";
+  assert.equal(r.metric.status, "accepting");
+  assert.equal(r.saved.designSha, "0001111");
+});
+
+// ---------- Schnappschuss für Signal ----------
+
+test("Schnappschuss: Auslastung, laufende Jobs, Warteschlange, offene Entscheidungen", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const config = cfg({ maxParallel: 2, models: { build: "sonnet" } });
+  const issues = [
+    { repo: "a/b", issue: 1, title: "Kurs", stage: "working", paused: false },
+    { repo: "a/b", issue: 2, title: "Farbe", stage: "approved", paused: false },
+    { repo: "a/b", issue: 3, title: "Ton", stage: "design_review", paused: false },
+    { repo: "a/b", issue: 4, title: "Akku", stage: "designed", paused: true },
+  ];
+  const jobs = [{ repo: "a/b", issue: 1, phase: "build" as const, mode: "new", startedAt: "2026-11-17T11:37:00Z", step: "verifying" }];
+  const snap = buildSnapshot(config, jobs, issues, false, "", now);
+  assert.deepEqual(snap.slots, { total: 2, used: 1 });
+  assert.deepEqual(snap.running[0], { repo: "a/b", issue: 1, title: "Kurs", phase: "build", mode: "new", model: "sonnet", step: "verifying", minutes: 23 });
+  assert.deepEqual(snap.waiting.map((w) => [w.issue, w.paused]), [[2, false], [4, true]]);
+  assert.deepEqual(snap.human.map((h) => [h.issue, h.stage]), [[3, "design_review"]]);
+});
+
+test("Schnappschuss: Statistik nur über die letzten 7 Tage", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const m = (t: string, phase: string, status: string, seconds = 600, costUsd = 1) => JSON.stringify({ t, repo: "a/b", issue: 1, phase, status, seconds, costUsd });
+  const metrics = [
+    m("2026-11-01T10:00:00Z", "accept", "review"),           // zu alt
+    m("2026-11-16T10:00:00Z", "build", "accepting", 1200),
+    m("2026-11-16T11:00:00Z", "accept", "working"),
+    m("2026-11-16T12:00:00Z", "accept", "review"),
+    m("2026-11-16T13:00:00Z", "check", "question"),
+    "kaputt",
+  ].join("\n");
+  const s = buildSnapshot(cfg(), [], [], true, metrics, now).stats;
+  assert.deepEqual(s, { runs: 4, done: 1, questions: 1, failed: 0, acceptPassed: 1, acceptTotal: 2, buildMinutesAvg: 20, costUsd: 4 });
+  assert.equal(buildSnapshot(cfg(), [], [], true, "", now).slots.used, 1); // Verbesserungs-Lauf belegt einen Platz
 });

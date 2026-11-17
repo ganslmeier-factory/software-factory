@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 type Run = {
-  t: string; repo: string; issue: number; phase: "check" | "build" | "accept"; mode?: string;
+  t: string; repo: string; issue: number; phase: "check" | "design" | "build" | "accept"; mode?: string;
   status: string; seconds: number | null; turns: number | null; costUsd: number | null; model?: string;
 };
 
@@ -37,7 +37,7 @@ const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)} %` : "�
 const usd = (x: number) => `${x.toFixed(2).replace(".", ",")} $`;
 
 const byPhase = (p: Run["phase"]) => runs.filter((r) => r.phase === p);
-const checks = byPhase("check"), builds = byPhase("build"), accepts = byPhase("accept");
+const checks = byPhase("check"), designs = byPhase("design"), builds = byPhase("build"), accepts = byPhase("accept");
 
 // Pro Aufgabe (Repo + Issue): reine Laufzeit aller Läufe, bis Review erreicht wurde (mit oder ohne bestandene Abnahme)
 const tasks = new Map<string, Run[]>();
@@ -55,6 +55,7 @@ const summary = {
   laufzeitProAufgabeMedianSek: median(taskSeconds),
   laufzeitProAufgabeSchnittSek: avg(taskSeconds),
   pruefung: { laeufe: checks.length, freigegeben: checks.filter((r) => r.status === "approved").length, rueckfrage: checks.filter((r) => r.status === "question").length, abgelehnt: checks.filter((r) => r.status === "rejected").length },
+  architektur: { laeufe: designs.length, schnittSek: avg(designs.map((r) => r.seconds ?? 0)), designReview: designs.filter((r) => r.status === "design_review").length, rueckfrage: designs.filter((r) => r.status === "question").length },
   entwicklung: { laeufe: builds.length, schnittSek: avg(builds.map((r) => r.seconds ?? 0)), schnittSchritte: avg(builds.map((r) => r.turns ?? 0)), aenderungswuensche: builds.filter((r) => r.mode === "change-request").length, rueckgabenAusAbnahme: builds.filter((r) => r.mode === "rework").length },
   abnahme: { laeufe: accepts.length, bestanden: accepts.filter((r) => r.status === "review").length, zurueckgegeben: accepts.filter((r) => r.status === "working").length, nichtBestandenMensch: accepts.filter((r) => r.status === "unresolved").length, beimErstenMalBestanden: firstPass, mitAbnahme: firstAccept.length },
   fehlgeschlagen: runs.filter((r) => r.status === "failed").length,
@@ -72,6 +73,11 @@ console.log(`\nPrüfung                      ${checks.length} Läufe`);
 console.log(`  freigegeben                ${summary.pruefung.freigegeben} (${pct(summary.pruefung.freigegeben, checks.length)})`);
 console.log(`  Rückfrage                  ${summary.pruefung.rueckfrage} (${pct(summary.pruefung.rueckfrage, checks.length)})`);
 console.log(`  abgelehnt                  ${summary.pruefung.abgelehnt} (${pct(summary.pruefung.abgelehnt, checks.length)})`);
+if (designs.length) {
+  console.log(`\nArchitektur                  ${designs.length} Läufe · Schnitt ${min(summary.architektur.schnittSek)}`);
+  console.log(`  zur Freigabe vorgelegt     ${summary.architektur.designReview}`);
+  console.log(`  Rückfrage                  ${summary.architektur.rueckfrage}`);
+}
 console.log(`\nEntwicklung                  ${builds.length} Läufe · Schnitt ${min(summary.entwicklung.schnittSek)} · ${Math.round(summary.entwicklung.schnittSchritte)} Schritte`);
 console.log(`  davon Änderungswünsche     ${summary.entwicklung.aenderungswuensche}`);
 console.log(`  davon Rückgaben Abnahme    ${summary.entwicklung.rueckgabenAusAbnahme}`);

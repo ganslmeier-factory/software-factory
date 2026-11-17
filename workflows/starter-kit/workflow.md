@@ -30,8 +30,10 @@ features/
   - Bug: Ist klar, was falsch ist und was stattdessen passieren soll?
   - Bei Freigabe: Testszenarien für die Abnahme schreiben (`/scenarios/scenarios.md`, außerhalb des Repos, der Entwickler-Agent sieht sie nie)
   - Ergebnis: **Freigegeben**, **Rückfrage** oder **Abgelehnt** (Feature ohne Spec wird immer abgelehnt)
-- **Bau** (startet automatisch, sobald ein Platz frei ist)
-  - Schritt **Architektur** → Skill `architecture` → `design.md` (Bug: reproduzieren, roter Test)
+- **Architektur** (eigener Lauf, eigenes Modell, startet nach der Freigabe)
+  - Skill `architecture` → `design.md` als Commit auf `factory/<nr>` (Bug: reproduzieren, roter Test)
+  - `design_gate: ja` in der Spec → Halt im Status **Design-Review**, weiter mit Label `design-ok`
+- **Bau** (startet automatisch, sobald ein Platz frei ist; design.md ist verbindlich)
   - Schritt **Umsetzung** → Skill `build` (Bug: Fix)
   - Schritt **Tests** → Skill `qa` → `qa-report.md`
   - Ergebnis: Pull Request → **Abnahme**
@@ -41,7 +43,7 @@ features/
 
 ## Status auf dem Board
 
-Neu → In Prüfung → (Rückfrage | Abgelehnt) → Freigegeben → In Arbeit (Schritt: Architektur · Umsetzung · Tests) → Abnahme → Review → Fertig. Technische Fehler: Fehlgeschlagen (ein Kommentar startet einen neuen Versuch).
+Neu → In Prüfung → (Rückfrage | Abgelehnt) → Freigegeben → Architektur → (Design-Review) → Design fertig → In Arbeit (Schritt: Umsetzung · Tests) → Abnahme → Review → Fertig. Technische Fehler: Fehlgeschlagen (ein Kommentar startet einen neuen Versuch).
 
 ## Status in `features/INDEX.md`
 

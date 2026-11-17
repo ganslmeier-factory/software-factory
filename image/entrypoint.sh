@@ -8,7 +8,7 @@ log() { echo "[factory] $*"; }
 
 : "${REPO:?}" "${ISSUE:?}" "${BRANCH:?}"
 MODEL="${MODEL:-opus}"
-export PHASE="${PHASE:-build}"   # check = prüfen, build = entwickeln, accept = unabhängige Abnahme
+export PHASE="${PHASE:-build}"   # check = prüfen, design = Architektur, build = entwickeln, accept = unabhängige Abnahme
 WORKFLOW="${WORKFLOW:-starter-kit}"
 
 # Workflow-Skills als Nutzer-Skills bereitstellen (landen nicht im Ziel-Repo)
@@ -41,7 +41,7 @@ else
 fi
 
 # Abhängigkeiten installieren (zum Entwickeln und für die Abnahme nötig)
-if [ "$PHASE" != "check" ] && [ -f .factory/setup.json ]; then
+if [ "$PHASE" != "check" ] && [ "$PHASE" != "design" ] && [ -f .factory/setup.json ]; then
   INSTALL=$(jq -r '.install // empty' .factory/setup.json)
   if [ -n "$INSTALL" ]; then
     log "Setup: $INSTALL"
