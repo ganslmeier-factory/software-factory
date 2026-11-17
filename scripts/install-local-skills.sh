@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Installiert die lokalen Factory-Skills (init, write-spec, to-factory) einmalig auf deinem Rechner.
+# Installiert die lokalen Factory-Skills (kiro-init, kiro-spec, to-factory) einmalig auf deinem Rechner.
 # Sie gelten dann in allen Projekten. Updates: im Factory-Repo "git pull", fertig (es sind Verknüpfungen).
 #   ./scripts/install-local-skills.sh
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)/local-skills"
 DEST="$HOME/.claude/skills"
 mkdir -p "$DEST"
+# Verknüpfungen auf Skills, die es nicht mehr gibt (z. B. init, write-spec), entfernen
+for link in "$DEST"/*; do
+  [ -L "$link" ] && [ ! -e "$link" ] && case "$(readlink "$link")" in "$SRC"/*) rm "$link"; echo "  entfernt: /$(basename "$link")" ;; esac
+done
 for skill in "$SRC"/*/; do
   name=$(basename "$skill")
   if [ -e "$DEST/$name" ] && [ ! -L "$DEST/$name" ]; then

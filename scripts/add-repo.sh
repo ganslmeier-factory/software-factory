@@ -17,17 +17,15 @@ label "factory:checking"       "BFD4F2" "Factory: prüft Spec bzw. Bug-Beschreib
 label "factory:question"       "FBCA04" "Factory: Rückfrage, braucht eine Antwort von dir"
 label "factory:rejected"       "B60205" "Factory: so nicht baubar, Spec überarbeiten"
 label "factory:approved"       "8250DF" "Factory: freigegeben, wartet auf freien Platz"
-label "factory:designing"      "F9A03F" "Factory: Architektur-Agent entwirft design.md"
-label "factory:design_review"  "F2A2C9" "Factory: design.md liegt vor, Label design-ok gibt frei"
-label "factory:designed"       "8250DF" "Factory: Architektur steht, wartet auf freien Platz"
+label "factory:designing"      "F9A03F" "Factory: schreibt design.md und tasks.md"
+label "factory:design_review"  "F2A2C9" "Factory: Design liegt vor, Label design-ok gibt frei"
+label "factory:designed"       "8250DF" "Factory: Design steht, wartet auf freien Platz"
 label "factory:working"        "F9A03F" "Factory: in Arbeit (Umsetzung, Tests)"
 label "factory:accepting"      "1D76DB" "Factory: unabhängige Abnahme läuft"
 label "factory:review"         "E99695" "Factory: PR bereit, du bist dran"
 label "factory:done"           "0E8A16" "Factory: gemergt"
 label "factory:failed"         "D93F0B" "Factory: technisch hängen geblieben"
-label "design-ok"              "0E8A16" "Mensch: design.md freigegeben, Umsetzung darf starten"
-label "pausiert"               "C5DEF5" "Mensch: keine neuen Läufe starten"
-label "abgebrochen"            "000000" "Mensch: laufenden Job stoppen, nichts Neues starten"
+label "design-ok"              "0E8A16" "Mensch: Design freigegeben, Umsetzung darf starten"
 # Labels aus der ersten Version entfernen
 for old in queued triage investigating implementing verifying pr waiting; do gh label delete "factory:$old" -R "$REPO" --yes >/dev/null 2>&1 || true; done
 

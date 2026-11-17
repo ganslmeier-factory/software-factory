@@ -1,6 +1,6 @@
 # Stack-Pack: Supabase (Postgres, Auth, Storage)
 
-Gilt, wenn `docs/stack.md` unter „Stack-Packs" `supabase` nennt.
+Gilt, wenn `.kiro/steering/tech.md` unter „Stack-Packs" `supabase` nennt.
 
 ## Datenbank
 - Schema-Änderungen **nur als Migrations-Datei** in `supabase/migrations/<zeitstempel>_<name>.sql`. Nie SQL von Hand gegen eine echte Datenbank ausführen. Die Factory hat keinen Zugriff auf Produktionsdaten und braucht ihn nicht.

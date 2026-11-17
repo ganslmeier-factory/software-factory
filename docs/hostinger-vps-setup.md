@@ -142,8 +142,8 @@ cd software-factory
 
 Danach hast du in jedem Projekt diese Befehle in Claude Code (eine laufende Claude-Code-Sitzung vorher neu starten):
 
-- `/init`: richtet ein Projekt ein (Produktbeschreibung, Stack, Design, Feature-Liste)
-- `/write-spec`: erarbeitet mit dir im Interview die Spezifikation für ein Feature
+- `/kiro-init`: richtet ein Projekt ein (Steering-Dateien für Produkt, Technik, Struktur und das Grundgerüst)
+- `/kiro-spec`: erarbeitet mit dir im Interview die Anforderungen für ein Feature (EARS)
 - `/to-factory`: übergibt eine fertige Spec als GitHub Issue an die Factory
 
 Die Skills sind Verknüpfungen auf diesen Ordner. Updates holst du dir mit `git pull` darin. **Verschieb oder lösch den Ordner danach nicht**, sonst findet Claude Code die Skills nicht mehr. Hast du ihn doch verschoben, führ `./scripts/install-local-skills.sh` am neuen Ort einfach noch einmal aus.
@@ -172,7 +172,7 @@ Das Skript erledigt drei Dinge auf einmal:
 Dann im neuen Projektordner:
 
 1. Leg eine kurze Projektbeschreibung als `docs/briefing.md` ab: Was soll entstehen, für wen, was ist wichtig?
-2. Starte Claude Code und führe `/init` aus. Claude stellt dir Fragen und legt daraus Produktbeschreibung, Stack, Design-Vorgaben und die Feature-Liste an, inklusive `.factory/setup.json` mit den Befehlen für Installation, Start und Prüfungen.
+2. Starte Claude Code und führe `/kiro-init` aus. Claude stellt dir Fragen und legt daraus die Steering-Dateien unter `.kiro/steering/` an, inklusive `.factory/setup.json` mit den Befehlen für Installation, Start und Prüfungen.
 3. Prüf das Ergebnis und push es.
 
 ### Bestehendes Repo
@@ -184,13 +184,13 @@ cd /opt/software-factory
 ./scripts/add-repo.sh dein-github-name/dein-repo
 ```
 
-Führ danach im Projekt auf deinem Rechner ebenfalls `/init` aus, damit die Factory Stack und Prüfbefehle kennt.
+Führ danach im Projekt auf deinem Rechner ebenfalls `/kiro-init` aus, damit die Factory Stack und Prüfbefehle kennt.
 
 Für jedes weitere Projekt wiederholst du einfach einen der beiden Wege. Alle Repos landen auf demselben Board; einen Neustart der Factory brauchst du nicht.
 
 ## 9. Die erste Aufgabe übergeben
 
-1. In Claude Code: `/write-spec`. Claude arbeitet die Spec im Interview mit dir aus und legt sie unter `features/PROJ-1-name/spec.md` ab.
+1. In Claude Code: `/kiro-spec`. Claude arbeitet die Anforderungen im Interview mit dir aus und legt sie unter `.kiro/specs/<feature>/requirements.md` ab.
 2. Lies die Spec durch. **Die Spec ist der Vertrag:** Die Factory entwickelt genau das, was drinsteht, und ändert sie nie.
 3. Commit und push.
 4. `/to-factory`. Das legt ein GitHub Issue mit dem Label `factory` an, das auf die Spec zeigt.
@@ -204,7 +204,7 @@ Innerhalb einer Minute übernimmt die Factory. Den Fortschritt siehst du auf dem
 | **Rückfrage** | Etwas ist unklar | Im Issue antworten |
 | **Abgelehnt** | So nicht umsetzbar | Spec überarbeiten, pushen, im Issue kommentieren |
 | **Freigegeben** | Wartet auf einen freien Platz | – |
-| **In Arbeit** | Ein zweiter Agent entwickelt: Architektur, Umsetzung, Tests | – |
+| **In Arbeit** | Agenten schreiben Design und Aufgabenplan, dann Umsetzung und Tests | – |
 | **Abnahme** | Ein dritter, unabhängiger Agent testet die Szenarien im Browser. Der Entwickler-Agent hat sie nie gesehen. Findet er Fehler, geht es zurück in die Arbeit (höchstens zweimal). Ist es danach immer noch nicht bestanden, landet der PR mit dem deutlichen Hinweis „Abnahme nicht bestanden“ bei dir | – |
 | **Review** | Pull Request mit Belegen und Vorschau ist fertig | Prüfen und mergen |
 | **Fertig** | Gemergt | – |

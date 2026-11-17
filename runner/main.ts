@@ -36,10 +36,8 @@ export type Config = {
   models?: Partial<Record<Phase | "improve", string>>;
   /** Architektur als eigener Lauf vor der Umsetzung. Standard: an */
   designPhase?: boolean;
-  /** Halt nach der Architektur: "spec" = wie in der Spec (design_gate), "always", "never". Standard: "spec" */
+  /** Halt nach dem Design: "spec" = wie in requirements.md ("Design-Freigabe: ja"), "always", "never". Standard: "spec" */
   designGate?: "spec" | "always" | "never";
-  /** Ereignisse an die Chat-Bridge (POST <url>, Bearer <token>) */
-  notify?: { url: string; token: string };
 };
 
 type Comment = { author: { login: string } | null; body: string; createdAt: string };
@@ -57,9 +55,9 @@ const STATUS: Record<string, { name: string; color: string; description: string 
   question: { name: "Rückfrage", color: "YELLOW", description: "Die Factory braucht eine Antwort von dir" },
   rejected: { name: "Abgelehnt", color: "RED", description: "So nicht baubar, die Spec muss überarbeitet werden" },
   approved: { name: "Freigegeben", color: "PURPLE", description: "Prüfung bestanden, wartet auf einen freien Platz" },
-  designing: { name: "Architektur", color: "ORANGE", description: "Ein eigener Agent entwirft design.md" },
-  design_review: { name: "Design-Review", color: "PINK", description: "design.md liegt vor, wartet auf das Label design-ok" },
-  designed: { name: "Design fertig", color: "PURPLE", description: "Architektur steht, wartet auf einen freien Platz für die Umsetzung" },
+  designing: { name: "Design", color: "ORANGE", description: "Ein eigener Agent schreibt design.md und tasks.md" },
+  design_review: { name: "Design-Review", color: "PINK", description: "design.md und tasks.md liegen vor, wartet auf das Label design-ok" },
+  designed: { name: "Design fertig", color: "PURPLE", description: "Design steht, wartet auf einen freien Platz für die Umsetzung" },
   working: { name: "In Arbeit", color: "ORANGE", description: "Umsetzung, Tests" },
   accepting: { name: "Abnahme", color: "BLUE", description: "Ein unabhängiger Agent testet den Pull Request" },
   review: { name: "Review", color: "PINK", description: "PR und Vorschau sind bereit, du bist dran" },
@@ -81,37 +79,20 @@ function log(event: string, data: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }));
 }
 
-/** Labels, die Menschen (z. B. per Signal-Bridge) setzen */
-export const PAUSE_LABEL = "pausiert";
-export const CANCEL_LABEL = "abgebrochen";
+/** Label, mit dem der Mensch das Design freigibt */
 export const DESIGN_OK_LABEL = "design-ok";
 
 /** Modell für eine Rolle: models.<rolle>, sonst model */
 export const modelFor = (cfg: Config, role: Phase | "improve") => cfg.models?.[role] || cfg.model;
 
-/** Meldet ein Ereignis an die Chat-Bridge. Fehler stören den Runner nie. */
-export async function notify(cfg: Config, ev: { type: string; repo: string; issue: number; title?: string; stage?: string; text?: string; url?: string; snapshot?: unknown }) {
-  const token = cfg.notify?.token || process.env.FACTORY_NOTIFY_TOKEN;
-  if (!cfg.notify?.url || !token) return;
-  try {
-    const res = await fetch(cfg.notify.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...ev, text: ev.text ? redact(ev.text).slice(0, 1500) : undefined }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) log("notify:error", { type: ev.type, status: res.status });
-  } catch (e) {
-    log("notify:error", { type: ev.type, error: String(e) });
-  }
-}
-
 export function loadConfig(path = CONFIG_PATH): Config {
   const c = JSON.parse(readFileSync(path, "utf8"));
   return {
-    label: "factory", maxParallel: 2, model: "opus", workflow: "starter-kit", pollSeconds: 60,
+    label: "factory", maxParallel: 2, model: "opus", workflow: "kiro", pollSeconds: 60,
     jobTimeoutMinutes: 90, image: "software-factory-job:latest", dataDir: "/var/lib/software-factory",
     containerMemory: "3g", maxReworks: 2, ...c,
+    // Der Workflow "starter-kit" wurde durch "kiro" ersetzt; alte Configs laufen weiter
+    ...(c.workflow === "starter-kit" ? { workflow: "kiro" } : {}),
   };
 }
 
@@ -354,14 +335,14 @@ export function buildPrompt(cfg: Config, repo: string, issue: Issue, phase: Phas
   const start = phase === "check"
     ? `Phase **Prüfung**: Prüfe nur, entwickle nichts. Beginne mit \`factory-report checking "..."\` und ende mit approved (vorher Testszenarien nach /scenarios/scenarios.md), question oder rejected.`
     : phase === "design"
-      ? `Phase **Architektur**: Entwirf nur, setze nichts um. Beginne mit \`factory-report architecture "..."\`. Committe und pushe design.md (Bug: den roten Test). ` +
-        (gate === "always" ? `Ende mit design_review.` : gate === "never" ? `Ende mit designed.` : `Ende mit design_review, wenn im Kopf der Spec \`design_gate: ja\` steht, sonst mit designed.`)
+      ? `Phase **Design**: Entwirf nur, setze nichts um. Beginne mit \`factory-report architecture "..."\`. Schreibe design.md und tasks.md (Bug: den roten Test), committe und pushe. ` +
+        (gate === "always" ? `Ende mit design_review.` : gate === "never" ? `Ende mit designed.` : `Ende mit design_review, wenn in requirements.md \`Design-Freigabe: ja\` steht, sonst mit designed.`)
       : phase === "build"
         ? designSeparate
-          ? `Phase **Umsetzung**: Prüfung und Architektur sind abgeschlossen (siehe Verlauf). design.md im Feature-Ordner ist verbindlich und wird nicht geändert. Beginne mit \`factory-report implementing "..."\`. Ende mit built.`
+          ? `Phase **Umsetzung**: Prüfung und Design sind abgeschlossen (siehe Verlauf). Arbeite tasks.md der Reihe nach ab und hake erledigte Aufgaben ab. design.md ist verbindlich und wird nicht geändert. Beginne mit \`factory-report implementing "..."\`. Ende mit built.`
           : `Phase **Bau**: Die Prüfung ist bestanden (siehe Verlauf). Beginne mit \`factory-report architecture "..."\` (bei Änderungswunsch oder Rückgabe aus der Abnahme direkt mit implementing). Ende mit built.`
         : `Phase **Abnahme**: Du bist der unabhängige Prüfer für den PR ${prUrl ?? ""}. Ende mit accepted, rework oder (nur in der letzten Runde) unresolved.`;
-  const phaseName: Record<Phase, string> = { check: "Prüfung", design: "Architektur", build: designSeparate ? "Umsetzung" : "Bau", accept: "Abnahme" };
+  const phaseName: Record<Phase, string> = { check: "Prüfung", design: "Design", build: designSeparate ? "Umsetzung" : "Bau", accept: "Abnahme" };
   return [
     `# Auftrag`,
     `- Repo: ${repo}`, `- Issue: #${issue.number} (${issue.url})`, `- Branch: factory/${issue.number}`,
@@ -428,7 +409,6 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
     await imageFor(cfg, repo),
   ], { GH_TOKEN: ghToken });
   log("job:started", { repo, issue: issue.number, phase, mode, model: modelFor(cfg, phase), container: name });
-  await notify(cfg, { type: phase === "check" && mode === "new" ? "started" : "stage", repo, issue: issue.number, title: issue.title, stage: STATUS[status].name });
 }
 
 /** Nach dem Architektur-Lauf: Ist der gemeldete Stand gepusht? Liefert den Commit oder einen Grund. */
@@ -441,7 +421,7 @@ async function checkDesign(repo: string, issue: number, reportedSha?: string): P
 }
 
 /** Hat die Umsetzung seit dem Architektur-Commit eine design.md geändert? */
-export const designFilesIn = (files: string[]) => files.map((f) => f.trim()).filter((f) => /^features\/[^/]+\/design\.md$/.test(f));
+export const designFilesIn = (files: string[]) => files.map((f) => f.trim()).filter((f) => /^\.kiro\/specs\/[^/]+\/design\.md$/.test(f));
 
 /** Nach einem Bau-Lauf: Sind die Pflicht-Checks auf genau dem gepushten Stand grün und ist die Spec unverändert? */
 async function checkBuild(repo: string, issue: number, dir: string, prUrl?: string, designSha?: string): Promise<string | null> {
@@ -456,7 +436,7 @@ async function checkBuild(repo: string, issue: number, dir: string, prUrl?: stri
   if (prUrl) {
     try {
       const files = (await gh(["pr", "diff", prUrl, "--name-only"])).split("\n");
-      const spec = files.find((f) => /^features\/[^/]+\/spec\.md$/.test(f.trim()));
+      const spec = files.find((f) => /^\.kiro\/(specs\/[^/]+\/requirements|steering\/[^/]+)\.md$/.test(f.trim()));
       if (spec) return `Der Pull Request ändert die Spec \`${spec.trim()}\`. Die Spec ist der Vertrag und darf nur vom Menschen geändert werden.`;
     } catch {}
   }
@@ -471,11 +451,6 @@ async function checkBuild(repo: string, issue: number, dir: string, prUrl?: stri
 }
 
 /** Wertet einen beendeten Container aus und räumt ihn weg. `reason` = Grund, warum der Runner ihn beendet hat. */
-/** Welche Endstände die Bridge als Nachricht aufs Handy bekommt */
-const EVENT_FOR: Record<string, string> = {
-  question: "question", rejected: "rejected", design_review: "design_review", review: "pr_ready",
-};
-
 async function finish(cfg: Config, c: Container, reason?: string) {
   const dir = jobDir(cfg, c.repo, c.issue);
   const status: { status?: string; step?: string; pr?: string; unresolved?: boolean } = readJobJson(join(dir, "status.json")) ?? {};
@@ -530,9 +505,6 @@ async function finish(cfg: Config, c: Container, reason?: string) {
 
   if (ended) {
     setState(cfg, c.repo, c.issue, designSha ? { designSha } : {});
-    const ev = EVENT_FOR[status.status ?? ""];
-    if (ev) await notify(cfg, { type: ev, repo: c.repo, issue: c.issue, stage: STATUS[status.status!]?.name,
-      text: (status as any).question || (status as any).summary, url: status.pr });
   } else {
     let detail = typeof result.result === "string" ? result.result.slice(-1500) : "";
     if (!detail) detail = errTail.slice(-800);
@@ -544,7 +516,6 @@ async function finish(cfg: Config, c: Container, reason?: string) {
       `### ⚠️ Der Lauf wurde ohne gültiges Ergebnis beendet\n\n**Grund:** ${problem}\n\n` +
       (detail ? "Letzte Ausgabe:\n```\n" + detail + "\n```\n\n" : "") +
       `_Schreib einen Kommentar mit einem Hinweis, dann versucht die Factory es erneut._`);
-    await notify(cfg, { type: "failed", repo: c.repo, issue: c.issue, title: issue.title, text: problem ?? undefined });
   }
   await docker(["rm", "-f", c.name]).catch(() => {});
 }
@@ -734,13 +705,13 @@ async function lostJob(cfg: Config, repo: string, issue: Issue): Promise<boolean
   return false;
 }
 
-/** Steuer-Labels, die Menschen setzen */
+/** Labels, die Menschen setzen */
 export const labelState = (issue: { labels: { name: string }[] }) => {
   const names = new Set(issue.labels.map((l) => l.name.toLowerCase()));
-  return { paused: names.has(PAUSE_LABEL), cancelled: names.has(CANCEL_LABEL), designOk: names.has(DESIGN_OK_LABEL) };
+  return { designOk: names.has(DESIGN_OK_LABEL) };
 };
 
-async function tickRepo(cfg: Config, repo: string, containers: Container[], slots: { free: number }, seen: SnapIssue[] = []) {
+async function tickRepo(cfg: Config, repo: string, containers: Container[], slots: { free: number }) {
   const issues: Issue[] = JSON.parse(await gh(["issue", "list", "-R", repo, "--label", cfg.label, "--state", "open",
     "--json", "number,title,body,url,labels,comments", "--limit", "100"]));
   issues.sort((a, b) => a.number - b.number); // älteste zuerst
@@ -778,19 +749,6 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
     const status = stageOf(issue);
     const running = containers.find((c) => c.repo === repo && c.issue === issue.number && openNumbers.has(c.issue));
     const flags = labelState(issue);
-    if (flags.cancelled) {
-      // Abgebrochen (z. B. per Signal): laufenden Job stoppen, nichts Neues starten
-      if (running) {
-        log("job:stopped", { repo, issue: issue.number, reason: "Label abgebrochen" });
-        await docker(["kill", running.name]).catch(() => {});
-        await docker(["rm", "-f", running.name]).catch(() => {});
-        slots.free++;
-        await comment(repo, issue.number, `failed:${running.phase}`,
-          `### ⏹ Abgebrochen\n\nDer laufende Job wurde gestoppt. Commits auf \`factory/${issue.number}\` bleiben erhalten.\n\n_Label \`${CANCEL_LABEL}\` entfernen, dann geht es beim nächsten Durchlauf weiter._`);
-        await notify(cfg, { type: "cancelled", repo, issue: issue.number, title: issue.title });
-      }
-      continue;
-    }
     if (running) {
       // Genauen Schritt aus dem laufenden Job aufs Board bringen
       const step = readJobJson(join(jobDir(cfg, repo, issue.number), "status.json"), 10_000)?.step || undefined;
@@ -836,8 +794,6 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
       if (prUrl) { phase = "build"; mode = "change-request"; }
     }
     if (!phase) continue;
-    // Pausiert: laufende Jobs dürfen fertig werden, neue starten nicht
-    if (flags.paused) continue;
     // Ein gemeinsamer Platz-Pool für alle Phasen. Ohne freien Platz bleibt das Issue in seinem Status und kommt beim nächsten Durchlauf dran.
     if (slots.free <= 0) continue;
     if (lost && !(await lostJob(cfg, repo, issue))) continue;
@@ -854,68 +810,7 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
     slots.free--;
   }
 
-  for (const i of issues) seen.push({ repo, issue: i.number, title: i.title, stage: stageOf(i) ?? "new", paused: labelState(i).paused });
   await syncPreviews(cfg, repo, issues).catch((e) => log("preview:error", { repo, error: String(e) }));
-}
-
-// ---------- Schnappschuss für die Chat-Bridge (Signal: status, stats) ----------
-
-export type SnapIssue = { repo: string; issue: number; title: string; stage: string; paused: boolean };
-export type SnapJob = { repo: string; issue: number; phase: Phase; mode: string; startedAt: string; step?: string };
-
-/** Fasst laufende Jobs, Warteschlange und die Läufe der letzten 7 Tage zusammen. Reine Funktion, damit testbar. */
-export function buildSnapshot(cfg: Config, jobs: SnapJob[], issues: SnapIssue[], improving: boolean, metrics: string, now = Date.now()) {
-  const title = (repo: string, n: number) => issues.find((i) => i.repo === repo && i.issue === n)?.title ?? "";
-  const running = jobs.map((j) => ({
-    repo: j.repo, issue: j.issue, title: title(j.repo, j.issue), phase: j.phase, mode: j.mode,
-    model: modelFor(cfg, j.phase), step: j.step || undefined,
-    minutes: Math.max(0, Math.round((now - Date.parse(j.startedAt)) / 60000)),
-  }));
-  const busy = new Set(jobs.map((j) => `${j.repo}#${j.issue}`));
-  const pick = (stages: string[]) => issues
-    .filter((i) => stages.includes(i.stage) && !busy.has(`${i.repo}#${i.issue}`))
-    .map((i) => ({ repo: i.repo, issue: i.issue, title: i.title.slice(0, 60), stage: i.stage, paused: i.paused }))
-    .slice(0, 25); // Nachricht bleibt kurz und unter dem Größenlimit der Bridge
-  const waiting = pick(["new", "approved", "designed", "working", "accepting", "checking", "designing"]);
-  const human = pick(["question", "rejected", "design_review", "review", "failed"]);
-
-  const cutoff = now - 7 * 86400_000;
-  const runs = metrics.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } })
-    .filter((r) => r && Date.parse(r.t) >= cutoff);
-  const accepts = runs.filter((r) => r.phase === "accept");
-  const builds = runs.filter((r) => r.phase === "build" && r.status === "accepting" && r.seconds);
-  const stats = {
-    runs: runs.length,
-    done: runs.filter((r) => r.phase === "accept" && r.status === "review").length,
-    questions: runs.filter((r) => r.status === "question").length,
-    failed: runs.filter((r) => r.status === "failed").length,
-    acceptPassed: accepts.filter((r) => r.status === "review").length,
-    acceptTotal: accepts.length,
-    buildMinutesAvg: builds.length ? Math.round(builds.reduce((a, r) => a + r.seconds, 0) / builds.length / 60) : null,
-    costUsd: Math.round(runs.reduce((a, r) => a + (r.costUsd ?? 0), 0) * 100) / 100,
-  };
-  return {
-    at: new Date(now).toISOString(),
-    slots: { total: cfg.maxParallel, used: jobs.length + (improving ? 1 : 0) },
-    improving, running, waiting, human, stats,
-  };
-}
-
-let lastSnapshot = { key: "", at: 0 };
-
-async function sendSnapshot(cfg: Config, issues: SnapIssue[]) {
-  if (!cfg.notify?.url) return;
-  const jobs: SnapJob[] = (await listContainers()).filter((c) => c.running).map((c) => ({
-    repo: c.repo, issue: c.issue, phase: c.phase, mode: c.mode, startedAt: c.startedAt,
-    step: readJobJson(join(jobDir(cfg, c.repo, c.issue), "status.json"), 10_000)?.step,
-  }));
-  const metrics = readJobFile(join(cfg.dataDir, "metrics.jsonl"), 2_000_000) ?? "";
-  const snap = buildSnapshot(cfg, jobs, issues, await improveRunning(cfg), metrics);
-  // Nur bei Änderung senden, sonst alle 5 Minuten als Lebenszeichen (Minuten der Jobs zählen nicht als Änderung)
-  const key = JSON.stringify({ ...snap, at: "", running: snap.running.map((r) => ({ ...r, minutes: 0 })) });
-  if (key === lastSnapshot.key && Date.now() - lastSnapshot.at < 5 * 60_000) return;
-  lastSnapshot = { key, at: Date.now() };
-  await notify(cfg, { type: "snapshot", repo: "", issue: 0, snapshot: snap });
 }
 
 async function tick(cfg: Config) {
@@ -941,14 +836,12 @@ async function tick(cfg: Config) {
   const slots = { free: cfg.maxParallel - containers.length - (improving ? 1 : 0) };
 
   // Ein fehlerhaftes Repo darf die anderen nicht blockieren
-  const seen: SnapIssue[] = [];
   for (const repo of cfg.repos) {
-    try { await tickRepo(cfg, repo, containers, slots, seen); }
+    try { await tickRepo(cfg, repo, containers, slots); }
     catch (e) { log("repo:error", { repo, error: String(e) }); }
   }
 
   await maybeImprove(cfg, slots.free).catch((e) => log("improve:error", { error: String(e) }));
-  await sendSnapshot(cfg, seen).catch((e) => log("snapshot:error", { error: String(e) }));
 }
 
 async function main() {
@@ -967,7 +860,7 @@ async function main() {
   log("runner:started", {
     login: FACTORY_LOGIN, allowedUsers: cfg.allowedUsers ?? [],
     preview: cfg.preview ? previewLink(cfg, 1).replace(/:4001$/, ":4001…") : "aus",
-    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, models: cfg.models ?? {}, designPhase: cfg.designPhase !== false, designGate: cfg.designGate ?? "spec", notify: !!cfg.notify?.url, workflow: cfg.workflow,
+    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, models: cfg.models ?? {}, designPhase: cfg.designPhase !== false, designGate: cfg.designGate ?? "spec", workflow: cfg.workflow,
   });
   while (true) {
     try {

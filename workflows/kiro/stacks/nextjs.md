@@ -1,6 +1,6 @@
 # Stack-Pack: Next.js (App Router) + Tailwind + shadcn/ui
 
-Gilt, wenn `docs/stack.md` unter „Stack-Packs" `nextjs` nennt.
+Gilt, wenn `.kiro/steering/tech.md` unter „Stack-Packs" `nextjs` nennt.
 
 ## Struktur
 - Seiten und Layouts in `src/app/`, Route Handlers in `src/app/api/<name>/route.ts`
