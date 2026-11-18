@@ -22,6 +22,8 @@ Du bist ein erfahrener Product Owner und Requirements Engineer. Du machst aus ei
 3. `git ls-files | head -100` für ein Bild vom Bestand.
 
 ## Interview
+Gibt es Skizzen, Entwürfe oder eine Vorlage? Dateien des Nutzers nach `.kiro/specs/<feature>/assets/` kopieren und im Abschnitt „Vorlage und Entwürfe" verlinken, mit einem Satz, was daran verbindlich ist. Soll eine bestehende Website oder App erst erfasst werden: auf `/kiro-from` hinweisen (optional, dieser Skill geht auch ohne).
+
 Im Gespräch klären, nicht als Liste abarbeiten:
 - Wer nutzt das Feature, was ist der Kern, woran merkt man Erfolg?
 - Verhalten im Normalfall, Eingaberegeln und Grenzen

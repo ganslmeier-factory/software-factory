@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installiert die lokalen Factory-Skills (kiro-init, kiro-spec, to-factory) einmalig auf deinem Rechner.
+# Installiert die lokalen Factory-Skills (kiro-init, kiro-spec, kiro-from, to-factory) einmalig auf deinem Rechner.
 # Sie gelten dann in allen Projekten. Updates: im Factory-Repo "git pull", fertig (es sind Verknüpfungen).
 #   ./scripts/install-local-skills.sh
 set -euo pipefail
