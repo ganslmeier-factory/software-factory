@@ -119,7 +119,7 @@ Die Factory startet die **unveränderte, offizielle Claude Code CLI** auf deinem
 - Die Agents arbeiten mit deinem GitHub-Login. Für mehr Trennung: eigener GitHub-Account für die Factory oder ein Fine-grained Token, der nur deine Factory-Repos erreicht.
 - Getestet: Ubuntu 24.04 auf Hostinger KVM 2, Next.js-Projekte. Weitere Stacks sind vorgesehen, aber noch nicht erprobt.
 
-Tests für den Runner: `node --test runner/main.test.ts` (Node 22.6+, ohne GitHub und Docker).
+Tests für Runner und Konsole: `node --test runner/main.test.ts runner/console.test.ts` (Node 22.6+, ohne GitHub und Docker).
 
 ## Erweiterungen in diesem Fork (ganslmeier-factory)
 
@@ -136,6 +136,12 @@ Tests für den Runner: `node --test runner/main.test.ts` (Node 22.6+, ohne GitHu
 "model": "opus",
 "models": { "check": "sonnet", "design": "opus", "build": "sonnet", "accept": "sonnet", "improve": "opus" },
 "designGate": "spec"
+```
+
+**Konsole.** Weboberfläche im Heimnetz unter `http://<server>:8088` (Login `factory`), aktiv sobald `console.password` gesetzt ist. Übersicht (laufende Jobs, Warteschlange, offene Entscheidungen, Wochenzahlen), Modell pro Rolle, Design-Freigabe, Parallelität und Zeitlimits, Status der Zugänge. Sie schreibt nur `config.json` (mit Sicherung, die letzten 10 bleiben); der Runner liest die Datei bei jedem Durchlauf neu. Passwörter und Tokens zeigt sie nie an.
+
+```json
+"console": { "port": 8088, "password": "<langes Passwort>" }
 ```
 
 Nach dem Update `./scripts/add-repo.sh <repo>` erneut ausführen, damit die Labels für Design und `design-ok` angelegt werden.

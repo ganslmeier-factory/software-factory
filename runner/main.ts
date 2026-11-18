@@ -38,18 +38,20 @@ export type Config = {
   designPhase?: boolean;
   /** Halt nach dem Design: "spec" = wie in requirements.md ("Design-Freigabe: ja"), "always", "never". Standard: "spec" */
   designGate?: "spec" | "always" | "never";
+  /** Weboberfläche (Konsole) im Heimnetz. Aktiv, sobald ein Passwort gesetzt ist. Login: factory / password */
+  console?: { port?: number; password: string };
 };
 
 type Comment = { author: { login: string } | null; body: string; createdAt: string };
 type Issue = { number: number; title: string; body: string; url: string; labels: { name: string }[]; comments: Comment[] };
-type Container = { name: string; repo: string; issue: number; phase: Phase; mode: string; running: boolean; startedAt: string; finishedAt: string; exitCode: number };
+export type Container = { name: string; repo: string; issue: number; phase: Phase; mode: string; model?: string; running: boolean; startedAt: string; finishedAt: string; exitCode: number };
 export type Phase = "check" | "design" | "build" | "accept";
 type Mode = "new" | "answer" | "change-request" | "retry" | "rework";
 
-const CONFIG_PATH = process.env.FACTORY_CONFIG ?? "/etc/software-factory/config.json";
+export const CONFIG_PATH = process.env.FACTORY_CONFIG ?? "/etc/software-factory/config.json";
 const MARK = "<!-- software-factory:";
 // Status eines Issues (Label factory:<status>) und die Spalte dazu auf dem Board
-const STATUS: Record<string, { name: string; color: string; description: string }> = {
+export const STATUS: Record<string, { name: string; color: string; description: string }> = {
   new: { name: "Neu", color: "GRAY", description: "Angelegt, die Factory hat es noch nicht geprüft" },
   checking: { name: "In Prüfung", color: "BLUE", description: "Die Factory prüft Spec bzw. Bug-Beschreibung" },
   question: { name: "Rückfrage", color: "YELLOW", description: "Die Factory braucht eine Antwort von dir" },
@@ -64,7 +66,7 @@ const STATUS: Record<string, { name: string; color: string; description: string 
   done: { name: "Fertig", color: "GREEN", description: "Gemergt" },
   failed: { name: "Fehlgeschlagen", color: "RED", description: "Technisch hängen geblieben, Kommentar startet neuen Versuch" },
 };
-const STEPS: Record<string, string> = { architecture: "Architektur", implementing: "Umsetzung", verifying: "Tests" };
+export const STEPS: Record<string, string> = { architecture: "Architektur", implementing: "Umsetzung", verifying: "Tests" };
 // Alte Labels (vor dem neuen Status-Modell) → neue
 const LEGACY: Record<string, string> = {
   queued: "new", triage: "checking", investigating: "working", implementing: "working",
@@ -74,6 +76,11 @@ let CONTAINER_UID = 1001; // Nutzer im Job-Image, wird beim Start aus dem Image 
 /** GitHub-Login, unter dem die Factory kommentiert. Nur Marker dieses Logins zählen als Factory-Zustand. */
 let FACTORY_LOGIN = "";
 export const setFactoryLogin = (login: string) => { FACTORY_LOGIN = login; };
+export const factoryLogin = () => FACTORY_LOGIN;
+
+/** Was die Konsole anzeigt: offene Issues je Repo nach dem letzten Durchlauf */
+export type ConsoleIssue = { repo: string; number: number; title: string; url: string; stage: string };
+export const consoleState = { issues: new Map<string, ConsoleIssue[]>(), lastTickAt: "", lastError: "" };
 
 function log(event: string, data: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }));
@@ -146,7 +153,7 @@ export function writeJobFile(path: string, content: string, uid = CONTAINER_UID,
   try { writeSync(fd, content); fchownSync(fd, uid, gid); } finally { closeSync(fd); }
 }
 
-const readJobJson = (path: string, maxBytes = 200_000): any => {
+export const readJobJson = (path: string, maxBytes = 200_000): any => {
   try { return JSON.parse(readJobFile(path, maxBytes) ?? ""); } catch { return null; }
 };
 
@@ -295,11 +302,11 @@ async function syncBoard(cfg: Config, url: string, status: string, step?: string
 // ---------- Jobs ----------
 
 const containerName = (repo: string, n: number) => `sf-${repo.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}-${n}`;
-const jobDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "jobs", `${repo.replace("/", "__")}__${n}`);
+export const jobDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "jobs", `${repo.replace("/", "__")}__${n}`);
 const scenarioDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "scenarios", `${repo.replace("/", "__")}__${n}`);
 const agentLimits = (cfg: Config) => ["--memory", cfg.containerMemory, "--memory-swap", cfg.containerMemory, "--pids-limit", "4096", "--shm-size", "1g"];
 
-async function listContainers(): Promise<Container[]> {
+export async function listContainers(): Promise<Container[]> {
   const names = (await docker(["ps", "-a", "--filter", "label=software-factory=1", "--format", "{{.Names}}"])).split("\n").filter(Boolean);
   const result: Container[] = [];
   for (const name of names) {
@@ -308,6 +315,7 @@ async function listContainers(): Promise<Container[]> {
       name, repo: info.Config.Labels["sf.repo"], issue: Number(info.Config.Labels["sf.issue"]),
       phase: (info.Config.Labels["sf.phase"] ?? "build") as Phase,
       mode: info.Config.Labels["sf.mode"] ?? "new",
+      model: info.Config.Labels["sf.model"],
       finishedAt: info.State.FinishedAt,
       running: info.State.Running, startedAt: info.State.StartedAt, exitCode: info.State.ExitCode,
     });
@@ -400,7 +408,7 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
   await docker(["rm", "-f", name]).catch(() => {});
   await docker([
     "run", "-d", "--name", name,
-    "--label", "software-factory=1", "--label", `sf.repo=${repo}`, "--label", `sf.issue=${issue.number}`, "--label", `sf.phase=${phase}`, "--label", `sf.mode=${mode}`,
+    "--label", "software-factory=1", "--label", `sf.repo=${repo}`, "--label", `sf.issue=${issue.number}`, "--label", `sf.phase=${phase}`, "--label", `sf.mode=${mode}`, "--label", `sf.model=${modelFor(cfg, phase)}`,
     ...agentLimits(cfg),
     "-e", `REPO=${repo}`, "-e", `ISSUE=${issue.number}`, "-e", `BRANCH=factory/${issue.number}`,
     "-e", `MODEL=${modelFor(cfg, phase)}`, "-e", `WORKFLOW=${cfg.workflow}`, "-e", `PHASE=${phase}`,
@@ -810,6 +818,7 @@ async function tickRepo(cfg: Config, repo: string, containers: Container[], slot
     slots.free--;
   }
 
+  consoleState.issues.set(repo, issues.map((i) => ({ repo, number: i.number, title: i.title, url: i.url, stage: stageOf(i) ?? "new" })));
   await syncPreviews(cfg, repo, issues).catch((e) => log("preview:error", { repo, error: String(e) }));
 }
 
@@ -835,6 +844,7 @@ async function tick(cfg: Config) {
   const improving = await improveRunning(cfg);
   const slots = { free: cfg.maxParallel - containers.length - (improving ? 1 : 0) };
 
+  for (const r of consoleState.issues.keys()) if (!cfg.repos.includes(r)) consoleState.issues.delete(r);
   // Ein fehlerhaftes Repo darf die anderen nicht blockieren
   for (const repo of cfg.repos) {
     try { await tickRepo(cfg, repo, containers, slots); }
@@ -857,18 +867,25 @@ async function main() {
   CONTAINER_UID = Number((await docker(["run", "--rm", "--entrypoint", "id", cfg.image, "-u"])).trim());
   FACTORY_LOGIN = (await gh(["api", "user", "--jq", ".login"])).trim();
   await initBoard(cfg);
+  if (cfg.console?.password) {
+    const { startConsole } = await import("./console.ts");
+    startConsole();
+  }
   log("runner:started", {
     login: FACTORY_LOGIN, allowedUsers: cfg.allowedUsers ?? [],
     preview: cfg.preview ? previewLink(cfg, 1).replace(/:4001$/, ":4001…") : "aus",
-    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, models: cfg.models ?? {}, designPhase: cfg.designPhase !== false, designGate: cfg.designGate ?? "spec", workflow: cfg.workflow,
+    console: cfg.console?.password ? `Port ${cfg.console.port ?? 8088}` : "aus", containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, models: cfg.models ?? {}, designPhase: cfg.designPhase !== false, designGate: cfg.designGate ?? "spec", workflow: cfg.workflow,
   });
   while (true) {
     try {
       cfg = loadConfig();
       await tick(cfg);
+      consoleState.lastError = "";
     } catch (e) {
       log("tick:error", { error: String(e) });
+      consoleState.lastError = String(e);
     }
+    consoleState.lastTickAt = new Date().toISOString();
     if (once) break;
     await Bun.sleep(cfg.pollSeconds * 1000);
   }

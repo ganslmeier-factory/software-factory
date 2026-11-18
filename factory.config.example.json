@@ -28,5 +28,9 @@
   "factoryRepo": "AUTO",
   "improve": {
     "everyDays": 0
+  },
+  "console": {
+    "port": 8088,
+    "password": "<langes Passwort>"
   }
 }
