@@ -9,7 +9,7 @@ import { dirname, basename, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import {
   CONFIG_PATH, STATUS, STEPS, consoleState, factoryLogin, jobDir, listContainers, loadConfig, modelFor,
-  readJobFile, readJobJson, type Config, type Phase,
+  readJobFile, readJobJson, scenarioDir, type Config, type Phase,
 } from "./main.ts";
 
 export const ROLES: { key: Phase | "improve"; name: string; what: string }[] = [
@@ -109,6 +109,18 @@ export function weekStats(metrics: string, now = Date.now()) {
   };
 }
 
+// ---------- Holdout-Szenarien (nur lesen; die bauenden Agenten sehen sie nie) ----------
+
+export function scenarios(cfg: Config) {
+  const issues = [...consoleState.issues.values()].flat();
+  const out: { repo: string; issue: number; title: string; url: string; stage: string; text: string }[] = [];
+  for (const i of issues) {
+    const text = readJobFile(join(scenarioDir(cfg, i.repo, i.number), "scenarios.md"), 200_000);
+    if (text) out.push({ repo: i.repo, issue: i.number, title: i.title, url: i.url, stage: STATUS[i.stage]?.name ?? i.stage, text });
+  }
+  return out;
+}
+
 // ---------- Zugriff ----------
 
 export function authorized(header: string | null, password: string): boolean {
@@ -172,6 +184,7 @@ export function handler(path = CONFIG_PATH) {
       } });
     }
     if (req.method === "GET" && url.pathname === "/api/state") return json(await state(cfg));
+    if (req.method === "GET" && url.pathname === "/api/scenarios") return json(scenarios(cfg));
     if (req.method === "GET" && url.pathname === "/api/config") {
       const raw = JSON.parse(readFileSync(path, "utf8"));
       return json({ config: publicConfig(raw), roles: ROLES, choices: MODEL_CHOICES, effective: Object.fromEntries(ROLES.map((r) => [r.key, modelFor(cfg, r.key)])) });
@@ -243,6 +256,9 @@ select:focus,input:focus,button:focus-visible{outline:2px solid var(--focus);out
 .btn:hover{background:var(--accent-hover)}.btn:active{transform:scale(.98)}.btn[disabled]{opacity:.5;cursor:default}
 .actions{display:flex;align-items:center;gap:16px;margin-top:24px}
 .msg{font-size:13px}.msg.ok{color:var(--success)}.msg.err{color:var(--signal)}
+details.card{padding:0}details.card summary{padding:16px 24px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:16px;align-items:center}
+details.card summary::-webkit-details-marker{display:none}details.card[open] summary{border-bottom:1px solid var(--border-1)}
+pre.scen{margin:0;padding:16px 24px;white-space:pre-wrap;font:13px/1.6 var(--font-mono);color:var(--fg2);max-height:520px;overflow:auto}
 .stamp{font-size:13px;color:var(--fg3);text-align:right}
 @media (max-width:700px){header,nav,main{padding-left:16px;padding-right:16px}}
 </style></head>
@@ -250,6 +266,7 @@ select:focus,input:focus,button:focus-visible{outline:2px solid var(--focus);out
 <header><div><p class="eyebrow">ORRYX · Software Factory</p><h1>Konsole</h1></div><div class="stamp" id="stamp">Lade …</div></header>
 <nav role="tablist">
 <button role="tab" aria-selected="true" data-tab="uebersicht">Übersicht</button>
+<button role="tab" aria-selected="false" data-tab="szenarien">Szenarien</button>
 <button role="tab" aria-selected="false" data-tab="rollen">Rollen</button>
 <button role="tab" aria-selected="false" data-tab="betrieb">Betrieb</button>
 <button role="tab" aria-selected="false" data-tab="zugaenge">Zugänge</button>
@@ -265,6 +282,10 @@ select:focus,input:focus,button:focus-visible{outline:2px solid var(--focus);out
   <div class="card"><p class="eyebrow">Läuft gerade</p><table><thead><tr><th>Issue</th><th>Phase</th><th>Modell</th><th>Seit</th></tr></thead><tbody id="t-run"></tbody></table></div>
   <div class="card"><p class="eyebrow">Du bist dran</p><table><tbody id="t-you"></tbody></table></div>
   <div class="card"><p class="eyebrow">Wartet</p><table><tbody id="t-wait"></tbody></table></div>
+</section>
+<section id="szenarien" hidden>
+  <p class="hint" style="margin:0 0 16px">Holdout-Szenarien schreibt die Prüfung, geprüft werden sie nur von der Abnahme. Die bauenden Agenten sehen sie nie. Fehlt dir etwas, ergänze es als Anforderung in requirements.md. Zitiere die Szenarien nicht im Issue, sonst sehen die bauenden Agenten sie.</p>
+  <div id="l-scen"></div>
 </section>
 <section id="rollen" hidden>
   <div class="card">
@@ -304,6 +325,7 @@ const link=(i)=>i.url?'<a href="'+esc(i.url)+'" target="_blank" rel="noopener">'
 document.querySelectorAll("nav button").forEach((b)=>b.addEventListener("click",()=>{
   document.querySelectorAll("nav button").forEach((x)=>x.setAttribute("aria-selected",String(x===b)));
   document.querySelectorAll("main section").forEach((s)=>s.hidden=s.id!==b.dataset.tab);
+  if(b.dataset.tab==="szenarien")loadScenarios();
 }));
 async function api(path,opts){const r=await fetch(path,opts);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error((d.errors||[r.statusText]).join(" · "));return d;}
 async function loadState(){
@@ -335,6 +357,11 @@ function modelSelect(id,value,allowDefault){
   return '<select id="'+id+'" data-custom="'+esc(custom?value:"")+'">'+opts.join("")+'</select>';
 }
 function readModel(sel){if(sel.value!=="__custom")return sel.value;const v=prompt("Modellname",sel.dataset.custom||"");return v===null?null:v.trim();}
+async function loadScenarios(){
+  try{const l=await api("/api/scenarios");
+    $("#l-scen").innerHTML=l.length?l.map((s)=>'<details class="card"><summary><span>'+link({...s,issue:s.issue})+' <span class="muted">'+esc(s.title)+'</span></span><span class="pill">'+esc(s.stage)+'</span></summary><pre class="scen">'+esc(s.text)+'</pre></details>').join(""):'<div class="card empty">Zu offenen Issues liegen noch keine Szenarien vor. Sie entstehen, sobald die Prüfung ein Issue freigibt.</div>';
+  }catch(e){$("#l-scen").innerHTML='<div class="card msg err">'+esc(e.message)+'</div>';}
+}
 async function loadConfig(){
   const d=await api("/api/config");CFG=d.config;CHOICES=d.choices;
   $("#t-roles").innerHTML=d.roles.map((r)=>'<tr><td><strong style="color:var(--fg1)">'+esc(r.name)+'</strong></td><td class="muted">'+esc(r.what)+'</td><td>'+modelSelect("r-"+r.key,(CFG.models||{})[r.key]||"",true)+' <span class="muted mono">→ '+esc(d.effective[r.key])+'</span></td></tr>').join("");

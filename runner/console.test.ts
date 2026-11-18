@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyConfigUpdate, authorized, handler, publicConfig, weekStats, writeConfig } from "./console.ts";
+import { applyConfigUpdate, authorized, handler, publicConfig, scenarios, weekStats, writeConfig } from "./console.ts";
+import { consoleState } from "./main.ts";
+import { mkdirSync } from "node:fs";
 
 const base = { repos: ["a/b"], model: "opus", maxParallel: 2, preview: { host: "x", password: "geheim" }, console: { password: "pw" } };
 
@@ -88,4 +90,20 @@ test("Konsole: HTTP mit Anmeldung, Schutz vor fremden Formularen, Speichern", as
   assert.equal(JSON.parse(readFileSync(path, "utf8")).models.build, "sonnet");
   const bad = await h(new Request("http://x/api/config", { method: "POST", headers: { ...auth, "x-factory-console": "1" }, body: '{"maxParallel":0}' }));
   assert.equal(bad.status, 400);
+});
+
+test("Konsole: Holdout-Szenarien offener Issues werden zum Lesen angeboten", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sf-console-"));
+  mkdirSync(join(dir, "scenarios", "a__b__7"), { recursive: true });
+  writeFileSync(join(dir, "scenarios", "a__b__7", "scenarios.md"), "S-1: Kurs wird angezeigt");
+  consoleState.issues.set("a/b", [
+    { repo: "a/b", number: 7, title: "Kurs", url: "https://x/7", stage: "working" },
+    { repo: "a/b", number: 8, title: "Ohne", url: "https://x/8", stage: "new" },
+  ]);
+  const l = scenarios({ dataDir: dir } as any);
+  consoleState.issues.clear();
+  assert.equal(l.length, 1);
+  assert.equal(l[0].issue, 7);
+  assert.equal(l[0].text, "S-1: Kurs wird angezeigt");
+  assert.equal(l[0].stage, "In Arbeit");
 });

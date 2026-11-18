@@ -303,7 +303,7 @@ async function syncBoard(cfg: Config, url: string, status: string, step?: string
 
 const containerName = (repo: string, n: number) => `sf-${repo.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}-${n}`;
 export const jobDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "jobs", `${repo.replace("/", "__")}__${n}`);
-const scenarioDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "scenarios", `${repo.replace("/", "__")}__${n}`);
+export const scenarioDir = (cfg: Config, repo: string, n: number) => join(cfg.dataDir, "scenarios", `${repo.replace("/", "__")}__${n}`);
 const agentLimits = (cfg: Config) => ["--memory", cfg.containerMemory, "--memory-swap", cfg.containerMemory, "--pids-limit", "4096", "--shm-size", "1g"];
 
 export async function listContainers(): Promise<Container[]> {
@@ -428,6 +428,22 @@ async function checkDesign(repo: string, issue: number, reportedSha?: string): P
   return { sha: head };
 }
 
+/** Dateien, die nur der Mensch ändert: Spec, Leitplanken und alles, woran ein Bau gemessen wird */
+export const PROTECTED: { re: RegExp; why: string }[] = [
+  { re: /^\.kiro\/specs\/[^/]+\/requirements\.md$/, why: "Die Spec ist der Vertrag und wird nur vom Menschen geändert." },
+  { re: /^\.kiro\/steering\//, why: "Die Leitplanken unter .kiro/steering/ ändert nur der Mensch." },
+  { re: /^\.factory\/(setup\.json|Dockerfile)$/, why: "Die Checks und die Laufzeitumgebung sind der Maßstab für den Bau und werden nur vom Menschen geändert. Braucht es eine Änderung, ist das eine Rückfrage." },
+  { re: /^\.github\/workflows\//, why: "CI-Workflows ändert nur der Mensch." },
+  { re: /^(CLAUDE|AGENTS)\.md$/, why: "Die Regeln für Agenten ändert nur der Mensch." },
+];
+export function protectedChange(files: string[]): { file: string; why: string } | null {
+  for (const f of files.map((x) => x.trim()).filter(Boolean)) {
+    const hit = PROTECTED.find((p) => p.re.test(f));
+    if (hit) return { file: f, why: hit.why };
+  }
+  return null;
+}
+
 /** Hat die Umsetzung seit dem Architektur-Commit eine design.md geändert? */
 export const designFilesIn = (files: string[]) => files.map((f) => f.trim()).filter((f) => /^\.kiro\/specs\/[^/]+\/design\.md$/.test(f));
 
@@ -444,8 +460,8 @@ async function checkBuild(repo: string, issue: number, dir: string, prUrl?: stri
   if (prUrl) {
     try {
       const files = (await gh(["pr", "diff", prUrl, "--name-only"])).split("\n");
-      const spec = files.find((f) => /^\.kiro\/(specs\/[^/]+\/requirements|steering\/[^/]+)\.md$/.test(f.trim()));
-      if (spec) return `Der Pull Request ändert die Spec \`${spec.trim()}\`. Die Spec ist der Vertrag und darf nur vom Menschen geändert werden.`;
+      const hit = protectedChange(files);
+      if (hit) return `Der Pull Request ändert \`${hit.file}\`. ${hit.why}`;
     } catch {}
   }
   if (designSha && designSha !== head) {

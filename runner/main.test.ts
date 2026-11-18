@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, lstat
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildPrompt, caddyConfig, designFilesIn, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
+  buildPrompt, caddyConfig, designFilesIn, protectedChange, humanCommentsSinceFactory, labelState, lastFactoryMarker, modelFor, readJobFile, redact,
   reworksSinceApproval, setFactoryLogin, writeJobFile, type Config,
 } from "./main.ts";
 
@@ -315,4 +315,24 @@ test("Bau, der requirements.md oder Steering-Dateien ändert, gilt nicht als geb
   const ok = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
   assert.equal(ok.metric.status, "accepting");
   prDiff = "src/app/page.tsx\n";
+});
+
+test("Geschützte Dateien: Spec, Leitplanken, Checks, CI und Agentenregeln", () => {
+  for (const f of [".kiro/specs/kurs/requirements.md", ".kiro/steering/tech.md", ".factory/setup.json", ".factory/Dockerfile",
+    ".github/workflows/ci.yml", "CLAUDE.md", "AGENTS.md"]) {
+    assert.equal(protectedChange(["src/a.ts", f])?.file, f, f);
+  }
+  for (const f of [".kiro/specs/kurs/tasks.md", ".kiro/specs/kurs/design.md", "docs/CLAUDE.md", "src/setup.json", ".github/ISSUE_TEMPLATE/x.yml"]) {
+    assert.equal(protectedChange([f]), null, f);
+  }
+});
+
+test("Bau, der die Checks in .factory/setup.json ändert, gilt nicht als gebaut", async () => {
+  const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
+  prDiff = "src/a.ts\n.factory/setup.json\n";
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
+  prDiff = "src/app/page.tsx\n";
+  assert.equal(r.metric.status, "failed");
+  assert.ok(r.failedComment.includes(".factory/setup.json"));
+  assert.ok(r.failedComment.includes("Rückfrage"));
 });
