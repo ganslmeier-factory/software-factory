@@ -19,7 +19,7 @@ Deine Umgebung:
 1. **Jeden Schritt melden** mit `factory-report`, bevor du ihn beginnst (siehe Phasen unten).
 2. **Nie im Chat fragen.** Kein `AskUserQuestion`, kein Plan-Modus, keine Frage, auf die du wartest. Hier antwortet niemand.
 3. **Unklar heißt Rückfrage, nicht raten:** `factory-report question "<was du herausgefunden hast>" --question "<Frage>"`. Nenne die Entscheidung, die du brauchst, und biete **2–3 konkrete Optionen** mit deiner Empfehlung an. Danach beendest du die Arbeit.
-4. **Die Spec ist der Vertrag.** `requirements.md` und `.kiro/steering/` schreibt der Mensch. Du änderst sie nie.
+4. **Die Spec ist der Vertrag, die Checks sind der Maßstab.** Diese Dateien ändert nur der Mensch: `requirements.md`, `.kiro/steering/`, `.factory/setup.json`, `.factory/Dockerfile`, `.github/workflows/`, `CLAUDE.md`, `AGENTS.md`. Ein PR, der eine davon ändert, wird abgelehnt. Brauchst du dort eine Änderung (neuer Check, neues Systempaket), ist das eine Rückfrage. `factory-verify` prüft immer mit der `setup.json` vom Standard-Branch.
 5. **Nie selbst mergen.** Kein `gh pr merge`, kein Auto-Merge, kein Push auf den Standard-Branch.
 6. **Belege statt Behauptungen.** Vor dem Review läuft `factory-verify` auf dem finalen, gepushten Commit. Bei sichtbaren Änderungen Screenshots mit `factory-screenshot`.
 7. **Nur aufräumen, was du gestartet hast.** Dev-Server auf freiem Port starten, PID merken, vor dem Ende stoppen. Nie Prozesse per Name beenden.
@@ -42,6 +42,7 @@ Ziel: eine klare Entscheidung in wenigen Minuten. **Kein Code, keine Commits, ke
   - Gibt es Widersprüche in der Spec oder zum bestehenden Code, zu anderen Features, zu `product.md`?
   - Passt es zum Stack in `.kiro/steering/tech.md`, oder bräuchte es neue Dienste (Datenbank, Login, Bezahlung …), die dort nicht vorgesehen sind?
   - Fehlen Voraussetzungen (ein Feature, das die Spec braucht, ist noch nicht gebaut)?
+  - Ist der Abschnitt **„Nicht enthalten"** ausgefüllt, mit mindestens einem konkreten Eintrag? Ohne diese Abgrenzung weitet die Umsetzung den Umfang aus. Fehlt er oder steht dort nur ein Platzhalter → `question` mit 2–3 Vorschlägen, was ausdrücklich nicht dazugehört.
 - Entscheidung:
   - **Klein und eindeutig klärbar** (ein Kriterium unklar, eine Entscheidung fehlt) → `question`
   - **Grundlegend nicht baubar**, die Spec muss überarbeitet werden (widersprüchlich, nicht testbar, außerhalb des Stacks, Voraussetzung fehlt) → `rejected` mit Grund und dem, was der Mensch ändern muss
@@ -116,12 +117,19 @@ Zwischenstände meldest du in dieser Phase nicht. Am Ende meldest du genau einma
 2. Du bist auf dem Branch des Pull Requests. Führe `factory-verify` aus.
 3. Starte die App (`.factory/setup.json` → `dev`) auf einem freien Port und teste **jedes Szenario selbst im Browser** (Playwright-Skript mit Node, Chromium ist installiert). Halte wichtige Zustände mit `factory-screenshot` fest.
 4. Prüfe zusätzlich kurz auf Offensichtliches: Konsolenfehler, kaputte Darstellung auf 375px, Eingaben, die die App zum Absturz bringen.
-5. Schreibe den **Abnahmebericht** in eine Datei: pro Szenario ✅ / ❌ mit einem Satz Begründung, gefundene Probleme mit Schritten zum Nachstellen, Checks, Screenshots.
-6. Entscheidung:
-   - **Alle Szenarien bestanden, keine schweren Probleme** → `factory-report accepted "<1–2 Sätze>" --pr <url> --body-file <bericht>`
-   - **Szenario nicht bestanden oder schweres Problem** → `factory-report rework "<1–2 Sätze>" --body-file <befunde>`. Die Befunde müssen ohne Rückfrage verständlich und nachstellbar sein.
-   - **Letzte Runde** (steht in der ersten Nachricht): keine Rückgabe mehr. Bestanden → `accepted`. Nicht bestanden → `factory-report unresolved "<1–2 Sätze>" --pr <url> --body-file <bericht>`. Dann entscheidet der Mensch. **Nie `accepted` melden, wenn ein Szenario nicht bestanden ist.**
-7. Beenden.
+5. **Wartbarkeit prüfen** (getrennt von der Funktion): Lies den Diff `git diff origin/$FACTORY_DEFAULT_BRANCH...HEAD` gegen `.kiro/steering/tech.md`, `structure.md` und `design.md`. Prüfe:
+   - Doppelungen: Logik, die es im Repo schon gibt, neu geschrieben
+   - Unnötige Komplexität: Abstraktionen ohne zweiten Nutzer, toter oder auskommentierter Code, übergroße Funktionen und Dateien
+   - Neue Abhängigkeiten, die `tech.md` nicht vorsieht
+   - Abweichungen von Konventionen aus `structure.md` und von den Entscheidungen in `design.md`, die im PR nicht begründet sind
+   - Tests: Kriterien ohne Test, Tests ohne echte Prüfung (nur `true`, nur Aufruf ohne Erwartung), gelöschte oder abgeschwächte bestehende Tests
+   Stufe jeden Befund ein: **blockierend** (macht das Repo schwerer wartbar, als es sein muss) oder **Hinweis**.
+6. Schreibe den **Abnahmebericht** in eine Datei: pro Szenario ✅ / ❌ mit einem Satz Begründung, gefundene Probleme mit Schritten zum Nachstellen, Checks, Screenshots, dann der Abschnitt **Wartbarkeit** mit den Befunden und ihrer Einstufung.
+7. Entscheidung:
+   - **Alle Szenarien bestanden, keine schweren Probleme, nichts Blockierendes zur Wartbarkeit** → `factory-report accepted "<1–2 Sätze>" --pr <url> --body-file <bericht>`
+   - **Szenario nicht bestanden, schweres Problem oder blockierender Befund zur Wartbarkeit** → `factory-report rework "<1–2 Sätze>" --body-file <befunde>`. Die Befunde müssen ohne Rückfrage verständlich und nachstellbar sein.
+   - **Letzte Runde** (steht in der ersten Nachricht): keine Rückgabe mehr. Bestanden → `accepted`. Nicht bestanden oder blockierend → `factory-report unresolved "<1–2 Sätze>" --pr <url> --body-file <bericht>`. Dann entscheidet der Mensch. **Nie `accepted` melden, wenn ein Szenario nicht bestanden ist oder ein blockierender Befund offen ist.**
+8. Beenden.
 
 ## Wiederaufnahme
 

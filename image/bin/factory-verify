@@ -12,13 +12,23 @@ if [ -n "$(git status --porcelain)" ]; then
   echo "Es gibt uncommittete Änderungen. Erst committen und pushen, dann prüfen." >&2
   exit 2
 fi
-if [ ! -f .factory/setup.json ]; then
-  echo "Keine .factory/setup.json gefunden. Lege sie an (install + checks) und committe sie." >&2
+# Maßstab sind die Checks vom Standard-Branch: Ein Branch kann die Regeln nicht ändern, nach denen er geprüft wird.
+BASE="${FACTORY_DEFAULT_BRANCH:-main}"
+SETUP=$(mktemp)
+if git show "origin/$BASE:.factory/setup.json" > "$SETUP" 2>/dev/null; then
+  SOURCE="origin/$BASE"
+  if [ -f .factory/setup.json ] && ! cmp -s "$SETUP" .factory/setup.json; then
+    echo "Hinweis: .factory/setup.json weicht vom Standard-Branch ab. Geprüft wird mit der Fassung von $SOURCE." >&2
+  fi
+elif [ -f .factory/setup.json ]; then
+  cp .factory/setup.json "$SETUP"; SOURCE="Arbeitskopie (noch nicht auf $BASE)"
+else
+  echo "Keine .factory/setup.json gefunden. Der Mensch legt sie mit /kiro-init an." >&2
   exit 2
 fi
 
 # Prüfvorgaben streng lesen: gültiges JSON und mindestens ein Check, sonst ist nichts geprüft
-if ! CHECKS=$(jq -er '.checks | select(type == "object") | to_entries | map(select((.value | type) == "string" and (.value | length) > 0)) | select(length > 0) | .[] | [.key, .value] | @tsv' .factory/setup.json 2>/dev/null); then
+if ! CHECKS=$(jq -er '.checks | select(type == "object") | to_entries | map(select((.value | type) == "string" and (.value | length) > 0)) | select(length > 0) | .[] | [.key, .value] | @tsv' "$SETUP" 2>/dev/null); then
   echo ".factory/setup.json ist ungültig oder enthält keine Checks (\"checks\": {\"name\": \"befehl\"}). Ohne Checks gilt nichts als geprüft." >&2
   exit 2
 fi
@@ -38,6 +48,6 @@ done <<< "$CHECKS"
 
 jq -n --arg sha "$SHA" --argjson r "$RESULTS" --argjson ok $([ $FAILED -eq 0 ] && echo true || echo false) \
   '{sha:$sha, ok:$ok, results:$r, at:(now|todate)}' > "$WORKDIR/verify.json"
-printf "**Checks auf Commit \`%s\`**\n\n$MD" "${SHA:0:7}" > "$WORKDIR/verify.md"
+printf "**Checks auf Commit \`%s\`** (Vorgaben: %s)\n\n$MD" "${SHA:0:7}" "$SOURCE" > "$WORKDIR/verify.md"
 echo; [ $FAILED -eq 0 ] && echo "Alle Checks bestanden auf ${SHA:0:7}." || echo "Mindestens ein Check ist fehlgeschlagen."
 exit $FAILED

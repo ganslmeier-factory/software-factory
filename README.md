@@ -123,7 +123,7 @@ Tests für Runner und Konsole: `node --test runner/main.test.ts runner/console.t
 
 ## Erweiterungen in diesem Fork (ganslmeier-factory)
 
-**Spec-Driven nach Kiro.** Anforderungen in EARS (`WENN … DANN SOLL …`), nummeriert 1.1, 1.2 …; Design und Aufgabenplan schreibt die Factory; die Umsetzung hakt `tasks.md` Aufgabe für Aufgabe ab, sodass der Fortschritt in der Datei sichtbar ist. Der Runner lehnt einen Bau ab, der `requirements.md` oder `.kiro/steering/` ändert.
+**Spec-Driven nach Kiro.** Anforderungen in EARS (`WENN … DANN SOLL …`), nummeriert 1.1, 1.2 …; Design und Aufgabenplan schreibt die Factory; die Umsetzung hakt `tasks.md` Aufgabe für Aufgabe ab, sodass der Fortschritt in der Datei sichtbar ist. Der Runner lehnt einen Bau ab, der `requirements.md`, `.kiro/steering/`, `.factory/setup.json`, `.factory/Dockerfile`, `.github/workflows/`, `CLAUDE.md` oder `AGENTS.md` ändert; `factory-verify` prüft immer mit der `setup.json` vom Standard-Branch. Die Abnahme prüft Funktion und Wartbarkeit getrennt.
 
 **Design als eigener Lauf.** Nach der Freigabe schreibt ein eigener Container `design.md` und `tasks.md`, committet und endet. Die Umsetzung läuft danach in einem neuen Container und darf `design.md` nicht ändern.
 
@@ -138,7 +138,7 @@ Tests für Runner und Konsole: `node --test runner/main.test.ts runner/console.t
 "designGate": "spec"
 ```
 
-**Konsole.** Weboberfläche im Heimnetz unter `http://<server>:8088` (Login `factory`), aktiv sobald `console.password` gesetzt ist. Übersicht (laufende Jobs, Warteschlange, offene Entscheidungen, Wochenzahlen), Modell pro Rolle, Design-Freigabe, Parallelität und Zeitlimits, Status der Zugänge. Sie schreibt nur `config.json` (mit Sicherung, die letzten 10 bleiben); der Runner liest die Datei bei jedem Durchlauf neu. Passwörter und Tokens zeigt sie nie an.
+**Konsole.** Weboberfläche im Heimnetz unter `http://<server>:8088` (Login `factory`), aktiv sobald `console.password` gesetzt ist. Übersicht (laufende Jobs, Warteschlange, offene Entscheidungen, Wochenzahlen), Holdout-Szenarien zum Lesen, Modell pro Rolle, Design-Freigabe, Parallelität und Zeitlimits, Status der Zugänge. Sie schreibt nur `config.json` (mit Sicherung, die letzten 10 bleiben); der Runner liest die Datei bei jedem Durchlauf neu. Passwörter und Tokens zeigt sie nie an.
 
 ```json
 "console": { "port": 8088, "password": "<langes Passwort>" }

@@ -19,7 +19,9 @@ Der Mensch schreibt die Anforderungen, die Factory schreibt Design und Aufgaben 
 .factory/setup.json              install, dev, checks
 ```
 
-`requirements.md` und `.kiro/steering/` ändert nur der Mensch. Die Factory liest sie.
+Nur der Mensch ändert `requirements.md`, `.kiro/steering/`, `.factory/setup.json`, `.factory/Dockerfile`, `.github/workflows/`, `CLAUDE.md` und `AGENTS.md`. Ein PR, der eine davon anfasst, wird abgelehnt. Die Checks laufen immer mit der `setup.json` vom Standard-Branch.
+
+`requirements.md` braucht einen ausgefüllten Abschnitt „Nicht enthalten"; sonst stellt die Prüfung eine Rückfrage.
 
 ## EARS-Muster für Abnahmekriterien
 
@@ -43,7 +45,9 @@ Kriterien sind nummeriert: Anforderung 2, Kriterium 2.3.
 - **Design** (eigener Lauf) → Skill `design` → `design.md` + `tasks.md` in einem Commit
   - Steht in `requirements.md` `Design-Freigabe: ja`: Halt im Status Design-Review, weiter mit Label `design-ok`
 - **Umsetzung** → Skill `build`: `tasks.md` der Reihe nach, jede erledigte Aufgabe abhaken (`- [x]`) und committen
-- **Abnahme** (eigener Lauf, unabhängig) → Skill `qa`: jedes Kriterium aus `requirements.md` gegen die laufende Anwendung, Bericht in den PR
+- **Abnahme** (eigener Lauf, unabhängig), zwei getrennte Prüfungen, Bericht in den PR:
+  - Funktion: jedes Kriterium und jedes Holdout-Szenario gegen die laufende Anwendung
+  - Wartbarkeit: Diff gegen `tech.md`, `structure.md` und `design.md` (Doppelungen, unnötige Komplexität, neue Abhängigkeiten, schwache Tests); blockierende Befunde gehen zurück in die Umsetzung
 
 Status auf dem Board: Neu → In Prüfung → Freigegeben → Design → (Design-Review) → Design fertig → In Arbeit → Abnahme → Review → Fertig.
 
