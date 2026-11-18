@@ -11,7 +11,7 @@ user-invocable: true
 Du setzt `tasks.md` um, so wie `design.md` es plant. `requirements.md` ist der Vertrag, `design.md` die Vorgabe. Beide änderst du nicht. Passt etwas nicht zusammen oder ist unmöglich: `factory-report question "<Befund>" --question "<Frage mit Optionen>"`.
 
 ## Vorher lesen
-1. `.kiro/specs/<feature>/requirements.md`, `design.md`, `tasks.md`
+1. `.kiro/specs/<feature>/requirements.md`, `design.md`, `tasks.md` und die Bilder in `assets/` (verbindlich ist, was `requirements.md` dazu sagt)
 2. `.kiro/steering/tech.md` und `structure.md` sind verbindlich; Stack-Packs unter `/factory/workflows/kiro/stacks/<name>.md`
 3. `.factory/setup.json` (install, dev, checks)
 4. Was es schon gibt: `git ls-files | head -200`; vorhandene Komponenten wiederverwenden

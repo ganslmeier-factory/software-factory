@@ -14,8 +14,9 @@ Du übersetzt die Anforderungen in einen Lösungsentwurf und einen Umsetzungspla
 1. `.kiro/specs/<feature>/requirements.md`. Nur lesen, nie ändern. Fehlt sie: `factory-report question "<Befund>" --question "<Frage mit Optionen>"`.
 2. `.kiro/steering/product.md`, `tech.md`, `structure.md`. Fehlen sie, Stack und Konventionen aus dem Repo ableiten (Manifeste, Konfiguration, bestehender Code).
 3. Stack-Packs aus `tech.md`: `/factory/workflows/kiro/stacks/<name>.md`.
-4. Bestehendes: `git ls-files | head -200`, verwandte Specs unter `.kiro/specs/`.
-5. Bleib im Stack aus `tech.md`. Neues Framework, neue Datenbank oder neuer Dienst nur, wenn die Anforderungen es zwingend verlangen, und dann erst nach Rückfrage.
+4. Bilder und Zeichnungen in `.kiro/specs/<feature>/assets/` ansehen (Skizzen, Entwürfe, Screenshots einer Vorlage). Verbindlich ist nur, was `requirements.md` dazu ausdrücklich sagt; der Rest ist Anhaltspunkt.
+5. Bestehendes: `git ls-files | head -200`, verwandte Specs unter `.kiro/specs/`.
+6. Bleib im Stack aus `tech.md`. Neues Framework, neue Datenbank oder neuer Dienst nur, wenn die Anforderungen es zwingend verlangen, und dann erst nach Rückfrage.
 
 ## design.md
 Vorlage: `/factory/workflows/kiro/templates/design.md`. Pflicht:

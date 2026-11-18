@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 ## Schritte
 
-1. **Spec finden:** `.kiro/specs/<feature>/requirements.md`. Fehlt sie: „Für <feature> gibt es noch keine Anforderungen. Erst `/kiro-spec <feature>`." und aufhören. Ohne Argument: Ordner unter `.kiro/specs/` ohne `design.md` auflisten und fragen, welcher gemeint ist.
+1. **Spec finden:** `.kiro/specs/<feature>/requirements.md`. Fehlt sie: „Für <feature> gibt es noch keine Anforderungen. Erst `/kiro-spec <feature>` oder, mit einer Vorlage, `/kiro-from <url> <feature>`." und aufhören. Ohne Argument: Ordner unter `.kiro/specs/` ohne `design.md` auflisten und fragen, welcher gemeint ist.
 
 2. **Liegt sie auf GitHub?** Die Factory liest vom Standard-Branch.
    - Standard-Branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`

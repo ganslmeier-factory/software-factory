@@ -5,6 +5,13 @@ Design-Freigabe: nein
 ## Einleitung
 <2–3 Sätze: welches Problem, für wen, woran man den Erfolg merkt.>
 
+## Vorlage und Entwürfe
+<!-- Optional. Nur ausfüllen, wenn es Skizzen, Entwürfe oder eine Vorlage gibt. -->
+- Quelle: <URL, App oder „eigene Skizze“>, erfasst am <JJJJ-MM-TT>
+- Bilder: ![Startseite](assets/startseite-1440.png)
+- Verbindlich: <z. B. Seitenstruktur und Reihenfolge der Abschnitte>
+- Nur Anhaltspunkt: <z. B. Farben, Abstände; Gestaltung nach .kiro/steering/>
+
 ## Anforderungen
 
 ### Anforderung 1: <Kurztitel>

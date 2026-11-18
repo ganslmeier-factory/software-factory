@@ -46,7 +46,7 @@ Eigener Docker-Container pro Issue
 - **Playbook** (`playbooks/factory.md`): die festen Regeln für jeden Lauf. Stages melden, bei Unklarheit fragen statt raten, Pflicht-Checks, nie selbst mergen.
 - **Workflow** (`workflows/kiro/`): Spec-Driven nach dem Muster von Kiro. Pro Feature `.kiro/specs/<feature>/` mit `requirements.md` (Mensch), `design.md` und `tasks.md` (Factory); projektweiter Kontext in `.kiro/steering/`. Siehe [workflow.md](workflows/kiro/workflow.md).
 - **Stack-Packs** (`workflows/kiro/stacks/`): Regeln für einen bestimmten Stack (z. B. `nextjs`, `supabase`). Welche gelten, steht in `.kiro/steering/tech.md` des Projekts.
-- **Lokale Skills** (`local-skills/`): `kiro-init` (Steering-Dateien und Grundgerüst), `kiro-spec` (Anforderungen im Interview), `to-factory` (an die Factory übergeben). Einmal pro Rechner installieren: `./scripts/install-local-skills.sh`.
+- **Lokale Skills** (`local-skills/`): `kiro-init` (Steering-Dateien und Grundgerüst), `kiro-spec` (Anforderungen im Interview), `to-factory` (an die Factory übergeben), optional `kiro-from` (Spec aus einer bestehenden Website oder App, mit [Craft Anything](https://github.com/storytold/craft-anything) falls installiert, nur Clean-Room-Erfassung, kein Nachbau). Einmal pro Rechner installieren: `./scripts/install-local-skills.sh`.
 - **Projekt-Vorlage**: [factory-template](https://github.com/AlexPEClub/factory-template), stack-unabhängig. Neues Projekt: `./scripts/new-project.sh mein-projekt`.
 
 ## Voraussetzungen
